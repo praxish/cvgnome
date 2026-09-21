@@ -223,6 +223,20 @@ type ProfileSourceBuildResult = {
   source_review_count: number;
 };
 
+type SourceRecoveryPatch = { name: string; summary: string | null };
+type ResumedSourceScan = {
+  scan: ProfileSourceScanResult;
+  recovery_patch: SourceRecoveryPatch | null;
+};
+type SourceRecoveryForm = {
+  scanId: string;
+  name: string;
+  summary: string;
+  request: SourceRecoveryPatch | null;
+  recovery: "edit" | "retry" | "conflict";
+  error: string | null;
+};
+
 type SourceSelectionMode = "files" | "folder";
 
 type ActiveAction =
@@ -233,6 +247,8 @@ type ActiveAction =
   | "source-build"
   | "source-discard"
   | "source-recovery"
+  | "source-resume"
+  | "source-correction"
   | "source-reset"
   | ResumeFormat
   | null;
@@ -453,6 +469,21 @@ function safeSourceRecoveryError(caught: unknown): string {
     return "The local vault is busy. Wait for the current operation to finish, then try clearing the unfinished review again.";
   }
   return "CVGnome could not clear the unfinished review. No retained evidence or current profile data was deleted.";
+}
+
+const TERMINAL_SOURCE_CORRECTION_CODES = new Set([
+  "profile_source_scan_expired",
+  "profile_source_scan_not_found",
+  "profile_source_base_changed",
+  "profile_source_scan_committed",
+  "profile_source_scan_not_recoverable",
+]);
+
+function normalizedSourceRecoveryPatch(form: SourceRecoveryForm): SourceRecoveryPatch {
+  const name = form.name.normalize("NFC").replace(/\u00a0/g, " ").trim();
+  const summary = form.summary.normalize("NFC").replace(/\u00a0/g, " ")
+    .replace(/\r\n?/g, "\n").replace(/\t/g, " ").trim();
+  return { name, summary: summary || null };
 }
 
 function manualProfileStartFailure(caught: unknown): {
@@ -700,6 +731,7 @@ function App() {
   const [sourceResetError, setSourceResetError] = useState<string | null>(null);
   const [confirmingSourceRecovery, setConfirmingSourceRecovery] = useState(false);
   const [sourceRecoveryError, setSourceRecoveryError] = useState<string | null>(null);
+  const [sourceRecoveryForm, setSourceRecoveryForm] = useState<SourceRecoveryForm | null>(null);
   const [confirmingCareerReset, setConfirmingCareerReset] = useState(false);
   const [careerResetConfirmation, setCareerResetConfirmation] = useState("");
   const [careerResetError, setCareerResetError] = useState<string | null>(null);
@@ -727,6 +759,9 @@ function App() {
   const returnToImportedFilesButtonRef = useRef(false);
   const returnToReviewInboxSourceButtonRef = useRef(false);
   const sourceScanInFlightRef = useRef(false);
+  const sourceCorrectionInFlightRef = useRef(false);
+  const sourceResumeInFlightRef = useRef(false);
+  const sourceRecoveryNameRef = useRef<HTMLInputElement>(null);
   const manualStartInFlightRef = useRef(false);
   const manualStartRequestRef = useRef<{
     key: string;
@@ -1162,6 +1197,7 @@ function App() {
     setSourceSelectionMode(mode);
     setActiveAction(selectingFiles ? "source-files-scan" : "source-folder-scan");
     setNotice(null);
+    setSourceRecoveryForm(null);
     setSourceAnnouncement(
       selectingFiles
         ? "Scanning the selected source files locally."
@@ -1238,11 +1274,111 @@ function App() {
     }
   }, [checkEngine, updateProfileSummary]);
 
+  const resumeSourceScan = useCallback(async () => {
+    if (sourceResumeInFlightRef.current || sourceCorrectionInFlightRef.current) return;
+    sourceResumeInFlightRef.current = true;
+    setActiveAction("source-resume");
+    setSourceRecoveryError(null);
+    try {
+      const resumed = await invoke<ResumedSourceScan | null>("resume_profile_source_scan");
+      if (resumed === null) {
+        const message = "No resumable first-profile review remains. Check the current workspace, or clear the unfinished review and choose your original files again.";
+        setSourceRecoveryError(message);
+        setNotice({ kind: "info", message });
+        setSourceRecoveryForm(null);
+        setSourceFlow((current) => "scan" in current && current.scan
+          ? { status: "error", scan: current.scan, message, canRetryBuild: false }
+          : { status: "idle" });
+        await checkEngine();
+        return;
+      }
+      const { scan, recovery_patch: patch } = resumed;
+      setSourceFlow({ status: "review", scan });
+      setSourceRecoveryForm(patch === null ? null : {
+        scanId: scan.scan_id, name: patch.name, summary: patch.summary ?? "",
+        request: patch, recovery: "retry", error: null,
+      });
+      setConfirmingSourceRecovery(false);
+      setNotice(null);
+      setActiveView("profile");
+      setProfileSection("overview");
+      setSourceAnnouncement(patch
+        ? "The saved recovery request is ready for an exact retry. Its outcome must be confirmed before changing these details."
+        : "The unfinished source review is open. Its staged files are available to continue.");
+    } catch {
+      const message = "CVGnome could not resume the review. Its files have not been discarded; try resuming again.";
+      setSourceRecoveryError(message);
+      setSourceRecoveryForm((current) => current ? { ...current, error: message } : current);
+    } finally {
+      sourceResumeInFlightRef.current = false;
+      setActiveAction(null);
+    }
+  }, [checkEngine]);
+
+  const recoverSourceProfile = useCallback(async (event: FormEvent<HTMLFormElement>, scan: ProfileSourceScanResult) => {
+    event.preventDefault();
+    if (!sourceRecoveryForm || sourceRecoveryForm.scanId !== scan.scan_id
+      || sourceRecoveryForm.recovery === "conflict" || sourceCorrectionInFlightRef.current
+      || sourceResumeInFlightRef.current) return;
+    const patch = sourceRecoveryForm.request ?? normalizedSourceRecoveryPatch(sourceRecoveryForm);
+    if (!patch.name || patch.name.length > 160 || (patch.summary?.length ?? 0) > 4000) {
+      setSourceRecoveryForm((current) => current ? { ...current, error: "Enter a name of up to 160 characters and a summary of up to 4,000 characters." } : current);
+      sourceRecoveryNameRef.current?.focus();
+      return;
+    }
+    sourceCorrectionInFlightRef.current = true;
+    setActiveAction("source-correction");
+    // Once dispatched, retain this exact payload until a receipt or an explicit
+    // engine rejection resolves it. A transport failure never makes it editable.
+    setSourceRecoveryForm((current) => current ? { ...current, request: patch, error: null } : current);
+    setNotice(null);
+    try {
+      const result = await invoke<ProfileSourceBuildResult>("recover_profile_sources", { scanId: scan.scan_id, patch });
+      if (result.scan_id !== scan.scan_id || result.profile_name !== patch.name
+        || typeof result.renderable !== "boolean" || typeof result.created !== "boolean"
+        || !Number.isSafeInteger(result.version_number) || result.version_number < 1) {
+        throw new Error("Unexpected source recovery receipt");
+      }
+      updateProfileSummary(result);
+      setSourceRecoveryForm(null);
+      setSourceFlow({ status: "complete", scan, result });
+      setSourceAnnouncement(result.renderable
+        ? "The profile and imported files were saved. Review the profile before exporting."
+        : "The incomplete profile and imported files were saved. Add resume content in Profile review before exporting.");
+      await checkEngine();
+    } catch (caught) {
+      const code = sourceErrorCode(caught);
+      if (code === "invalid_params") {
+        setSourceRecoveryForm((current) => current ? {
+          ...current, request: null, recovery: "edit",
+          error: "These corrections were rejected. Check the name and optional summary, then try again.",
+        } : current);
+      } else if (code !== null && TERMINAL_SOURCE_CORRECTION_CODES.has(code)) {
+        setSourceRecoveryForm(null);
+        setSourceFlow({ status: "error", scan, canRetryBuild: false,
+          message: "This source review can no longer accept corrections. Check the saved workspace before closing this review or choosing the original files again." });
+        await checkEngine();
+      } else {
+        const conflict = code === "profile_source_recovery_conflict";
+        setSourceRecoveryForm((current) => current ? {
+          ...current, request: patch, recovery: conflict ? "conflict" : "retry",
+          error: conflict
+            ? "This request differs from the recovery already saved with these files. Resume the original recovery before continuing."
+            : "CVGnome could not confirm whether the profile was saved. Retry the exact request to confirm the outcome without creating another version.",
+        } : current);
+      }
+    } finally {
+      sourceCorrectionInFlightRef.current = false;
+      setActiveAction(null);
+    }
+  }, [checkEngine, sourceRecoveryForm, updateProfileSummary]);
+
   const discardSourceScan = useCallback(async (scanId: string) => {
     setActiveAction("source-discard");
     setNotice(null);
     try {
       await invoke<{ discarded: boolean }>("discard_profile_source_scan", { scanId });
+      setSourceRecoveryForm(null);
       setSourceFlow({ status: "idle" });
       setSourceAnnouncement("Source review cleared.");
       await checkEngine();
@@ -1275,6 +1411,7 @@ function App() {
   }, [checkEngine, sourceSelectionMode]);
 
   const closeTerminalSourceReview = useCallback((scanId: string) => {
+    setSourceRecoveryForm(null);
     setSourceFlow({ status: "idle" });
     setNotice({
       kind: "info",
@@ -1696,6 +1833,7 @@ function App() {
           ? "Check for saved profile"
           : manualStartRecovery === "blocked" ? "Start unavailable" : "Create profile";
   const sourceBusy = sourceFlow.status === "scanning" || sourceFlow.status === "building";
+  const sourceRecoveryUncertain = sourceRecoveryForm?.request != null;
   const sourceScan =
     sourceFlow.status === "review" ||
     sourceFlow.status === "building" ||
@@ -1801,6 +1939,7 @@ function App() {
       || (activeView === "profile" && profileMutationBusyRef.current)
       || manualStartInFlightRef.current
       || manualStartUncertain
+      || sourceRecoveryUncertain
     ) return;
     if (nextView === activeView) {
       if (nextView === "profile" && profileSection === "memories" && profileEditorDirty
@@ -1840,7 +1979,7 @@ function App() {
     if (activeView === "profile" && manualStartForm) clearManualProfileStart();
     if (nextView === "profile") setProfileSection(hasProfile ? "review" : "overview");
     setActiveView(nextView);
-  }, [activeAction, activeView, careerResetBusy, clearManualProfileStart, confirmingCareerReset, hasProfile, manualStartDirty, manualStartForm, manualStartUncertain, modelSettingsDirty, profileEditorDirty, profileSection, roleEditorDirty]);
+  }, [activeAction, activeView, careerResetBusy, clearManualProfileStart, confirmingCareerReset, hasProfile, manualStartDirty, manualStartForm, manualStartUncertain, modelSettingsDirty, profileEditorDirty, profileSection, roleEditorDirty, sourceRecoveryUncertain]);
 
   const openMemories = useCallback(() => {
     if (profileMutationBusyRef.current || roleTailoringBusyRef.current || reviewInboxBlocked) return;
@@ -1848,7 +1987,7 @@ function App() {
   }, [reviewInboxBlocked]);
 
   const openImportedFiles = useCallback(() => {
-    if (manualStartInFlightRef.current || manualStartUncertain) return;
+    if (manualStartInFlightRef.current || manualStartUncertain || sourceRecoveryUncertain) return;
     if (
       manualStartForm
       && basicDetailsFormHasInput(manualStartForm)
@@ -1859,15 +1998,16 @@ function App() {
     setConfirmingSourceRecovery(false);
     materialsReturnSectionRef.current = profileSection === "review" ? "review" : "overview";
     setProfileSection("materials");
-  }, [clearManualProfileStart, manualStartForm, manualStartUncertain, profileSection]);
+  }, [clearManualProfileStart, manualStartForm, manualStartUncertain, profileSection, sourceRecoveryUncertain]);
 
   const closeImportedFiles = useCallback(() => {
+    if (sourceCorrectionInFlightRef.current || sourceRecoveryUncertain) return;
     setConfirmingSourceReset(false);
     setConfirmingSourceRecovery(false);
     const returnSection = materialsReturnSectionRef.current;
     returnToImportedFilesButtonRef.current = returnSection === "overview";
     setProfileSection(returnSection);
-  }, []);
+  }, [sourceRecoveryUncertain]);
 
   const openReviewInbox = useCallback(() => {
     if (
@@ -1950,12 +2090,16 @@ function App() {
     const canRetryBuild =
       sourceFlow.status === "error" && sourceFlow.canRetryBuild === true;
     const buildUnavailable = error !== null && !canRetryBuild;
+    const correction = sourceRecoveryForm?.scanId === scan.scan_id ? sourceRecoveryForm : null;
+    const canRecover = !scan.base_profile && !scan.can_build && scan.file_counts.parsed > 0 && !buildUnavailable;
+    const correctionLocked = correction?.request != null;
+    const isRecovering = activeAction === "source-correction" || activeAction === "source-resume";
 
     return (
       <section
         className="source-flow"
         aria-labelledby="source-review-title"
-        aria-busy={isBuilding}
+        aria-busy={isBuilding || isRecovering}
         ref={sourcePanelRef}
         tabIndex={-1}
       >
@@ -1963,13 +2107,17 @@ function App() {
           <div>
             <p className="label">Aggregate scan review</p>
             <h4 id="source-review-title">
-              {isBuilding
+              {isRecovering
+                ? "Confirming the profile and imported files…"
+                : correctionLocked
+                  ? "Confirm the saved recovery request"
+                : isBuilding
                 ? scan.base_profile ? "Saving the reviewed import…" : "Creating a profile version…"
                 : scan.base_profile ? "Review before saving this import" : "Review before creating a version"}
             </h4>
           </div>
-          <span className={`review-badge ${scan.can_build && !buildUnavailable ? "review-badge--ready" : ""}`}>
-            {buildUnavailable ? "Cannot retry" : scan.can_build ? "Ready to build" : "Needs attention"}
+          <span className={`review-badge ${scan.can_build && !buildUnavailable && !correctionLocked ? "review-badge--ready" : ""}`}>
+            {buildUnavailable ? "Cannot retry" : correctionLocked ? "Awaiting confirmation" : scan.can_build ? "Ready to build" : "Needs attention"}
           </span>
         </div>
 
@@ -2002,7 +2150,7 @@ function App() {
         <dl className="scan-metrics" aria-label="Source scan totals">
           <div><dt>Discovered</dt><dd>{scan.file_counts.discovered}</dd></div>
           <div><dt>Supported</dt><dd>{scan.file_counts.staged}</dd></div>
-          <div><dt>Parsed</dt><dd>{scan.file_counts.parsed}</dd></div>
+          <div><dt>Read successfully</dt><dd>{scan.file_counts.parsed}</dd></div>
           <div><dt>Duplicates</dt><dd>{scan.file_counts.duplicates}</dd></div>
           <div><dt>Skipped</dt><dd>{scan.file_counts.skipped}</dd></div>
           <div><dt>Failed</dt><dd>{scan.file_counts.failed}</dd></div>
@@ -2038,8 +2186,42 @@ function App() {
 
         {error && <p className="source-error" role="alert">{error}</p>}
         {!scan.can_build && !error && (
-          <p className="source-guidance">A profile version cannot be created until the scan contains usable profile sources and no blocking warnings.</p>
+          <p className="source-guidance">{canRecover
+            ? "Text was extracted from your files, but CVGnome could not build a complete profile from it. Reading a document does not mean its name, work history, or other fields were recognized. Complete your details below to keep the imported draft and files, then review and edit the profile."
+            : "These sources do not yet contain enough recognized profile information to create a version. Review the warnings before choosing another source set."}</p>
         )}
+
+        {correction && <form className="source-recovery-form" onSubmit={(event) => void recoverSourceProfile(event, scan)}>
+          <h5>Complete details and keep files</h5>
+          <p>Your corrections are entered by you. They do not change the original documents or claim that unrecognized fields were extracted.</p>
+          <fieldset disabled={busy || correctionLocked}>
+            <label>
+              <span>Name <b aria-hidden="true">*</b></span>
+              <input ref={sourceRecoveryNameRef} value={correction.name} required maxLength={160}
+                autoComplete="name" onChange={(event) => setSourceRecoveryForm((current) => current
+                  ? { ...current, name: event.target.value, error: null } : current)} />
+            </label>
+            <label>
+              <span>Summary (optional)</span>
+              <textarea value={correction.summary} maxLength={4000} rows={4}
+                aria-describedby="source-recovery-summary-help"
+                onChange={(event) => setSourceRecoveryForm((current) => current
+                  ? { ...current, summary: event.target.value, error: null } : current)} />
+            </label>
+            <p id="source-recovery-summary-help">Add a summary if needed. Leave this blank to keep any summary already extracted. You can finish other sections in Profile review; export stays unavailable until there is enough resume content.</p>
+          </fieldset>
+          {correction.error && <p className="source-error" role="alert">{correction.error}</p>}
+          {correctionLocked && <p className="source-guidance" role="status">The original recovery request is retained. Confirm its outcome before changing these details or closing the app.</p>}
+          <div className="source-flow__actions">
+            {!correctionLocked && <button type="button" className="quiet-action" disabled={busy}
+              onClick={() => setSourceRecoveryForm(null)}>Cancel corrections</button>}
+            {correction.recovery === "conflict"
+              ? <button type="button" className="primary-action" disabled={busy} onClick={() => void resumeSourceScan()}>Resume original recovery</button>
+              : <button type="submit" className="primary-action" disabled={busy || !correction.name.trim()}>
+                {activeAction === "source-correction" ? "Saving profile and files…" : correctionLocked ? "Retry exact request" : "Save profile and keep files"}
+              </button>}
+          </div>
+        </form>}
 
         <div className="source-flow__actions">
           <button
@@ -2052,7 +2234,7 @@ function App() {
                 void discardSourceScan(scan.scan_id);
               }
             }}
-            disabled={busy}
+            disabled={busy || correctionLocked}
           >
             {buildUnavailable
               ? "Close review"
@@ -2060,7 +2242,12 @@ function App() {
                 ? "Clearing…"
                 : "Discard review"}
           </button>
-          {(!error || canRetryBuild) && (
+          {canRecover && !correction && <button className="primary-action" type="button" disabled={busy}
+            onClick={() => {
+              setSourceRecoveryForm({ scanId: scan.scan_id, name: "", summary: "", request: null, recovery: "edit", error: null });
+              window.requestAnimationFrame(() => sourceRecoveryNameRef.current?.focus());
+            }}>Complete details and keep files</button>}
+          {!canRecover && !correction && (!error || canRetryBuild) && (
             <button
               className="primary-action"
               type="button"
@@ -2145,7 +2332,7 @@ function App() {
 
       <SourceWarnings warnings={result.warnings} />
       {!result.renderable && (
-        <p className="source-guidance">This version is saved, but it needs a profile name and resume content before export.</p>
+        <p className="source-guidance">This incomplete profile and its files are saved. Add or correct resume content in Profile review before exporting.</p>
       )}
 
       <div className="source-flow__actions">
@@ -2186,7 +2373,8 @@ function App() {
     || careerResetBusy
     || confirmingCareerReset
     || manualStartBusy
-    || manualStartUncertain;
+    || manualStartUncertain
+    || sourceRecoveryUncertain;
   const workspaceNavigationLockMessage = roleTailoringBusy
     ? "Workspace navigation is paused until the model-assisted resume operation finishes."
     : profileMutationBusy
@@ -2201,6 +2389,8 @@ function App() {
               ? committedManualStartReceipt
                 ? "Profile version 1 is saved. Finish opening Profile review before changing workspaces."
                 : "The manual profile save outcome is unresolved. Reconcile this exact request before changing workspaces."
+              : sourceRecoveryUncertain
+                ? "The import recovery outcome is unresolved. Retry the exact request before changing workspaces."
               : sourceBusy
                 ? "Workspace navigation is paused until the local import operation finishes."
                 : busy
@@ -2210,7 +2400,7 @@ function App() {
   return (
     <DesktopCloseGuard
       dirty={manualStartDirty || (sourceFlow.status === "review") || (sourceFlow.status === "error" && Boolean(sourceFlow.scan))}
-      blocked={busy || sourceBusy || careerResetBusy || manualStartUncertain
+      blocked={busy || sourceBusy || careerResetBusy || manualStartUncertain || sourceRecoveryUncertain
         || (sourceFlow.status === "error" && Boolean(sourceFlow.canRetryBuild))
         || (confirmingCareerReset && careerResetRequestIdRef.current !== null && careerResetError !== null)}
     >
@@ -2452,7 +2642,7 @@ function App() {
                       {activeAction === "canonical-import" ? "Importing…" : "Choose profile JSON…"}
                     </button>
                     {hasPendingSourceReview && <small>Finish or discard the source review first.</small>}
-                    {hasPersistedUnfinishedReview && <small>Open Imported files above to clear the unfinished review.</small>}
+                    {hasPersistedUnfinishedReview && <small>Open Imported files above to resume or clear the unfinished review.</small>}
                   </section>
                 </div>
               </>
@@ -2485,9 +2675,15 @@ function App() {
                     <div>
                       <p className="route-kicker"><span aria-hidden="true">!</span> Continue safely</p>
                       <h4 id="new-user-recovery-title">An import review was left unfinished</h4>
-                      <p>{counted(status?.source_previews ?? 0, "temporary review")} must be cleared before you choose another source set. No profile has been created.</p>
+                      <p>Resume the latest available review to keep working with its files, or manage the {counted(status?.source_previews ?? 0, "unfinished review")} before choosing another source set. No profile has been created.</p>
+                      {sourceRecoveryError && <p className="source-error" role="alert">{sourceRecoveryError}</p>}
                     </div>
-                    <button type="button" className="primary-action" onClick={openImportedFiles}>Review imported files</button>
+                    <div className="source-picker-actions">
+                      <button type="button" className="primary-action" disabled={busy} onClick={() => void resumeSourceScan()}>
+                        {activeAction === "source-resume" ? "Resuming…" : "Resume import review"}
+                      </button>
+                      <button type="button" className="secondary-action" disabled={busy} onClick={openImportedFiles}>Manage unfinished reviews</button>
+                    </div>
                   </section>
                 ) : manualStartForm ? (
                   <section className="new-user-manual-start" aria-labelledby="manual-profile-title">
@@ -2822,17 +3018,24 @@ function App() {
             <section className="inline-recovery" aria-labelledby="materials-recovery-title">
               <div>
                 <strong id="materials-recovery-title">Unfinished import review</strong>
-                <span>{counted(status.source_previews, "temporary review")} must be cleared before another import.</span>
+                <span>{counted(status.source_previews, "temporary review")} {hasProfile
+                  ? "must be cleared before another import."
+                  : "can be resumed where available, or cleared before another import."}</span>
               </div>
               {!confirmingSourceRecovery ? (
-                <button
-                  type="button"
-                  className="secondary-action"
-                  onClick={() => setConfirmingSourceRecovery(true)}
-                  disabled={busy}
-                >
-                  Clear review…
-                </button>
+                <div className="source-picker-actions">
+                  {!hasProfile && <button type="button" className="primary-action" disabled={busy} onClick={() => void resumeSourceScan()}>
+                    {activeAction === "source-resume" ? "Resuming…" : "Resume import review"}
+                  </button>}
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => setConfirmingSourceRecovery(true)}
+                    disabled={busy}
+                  >
+                    Clear review…
+                  </button>
+                </div>
               ) : (
                 <div className="inline-confirmation">
                   <span>Only uncommitted temporary data is removed.</span>

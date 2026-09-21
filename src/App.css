@@ -509,6 +509,14 @@ textarea::placeholder { color: #a0a09b; }
 .source-review-candidate-note p { margin: 0; font-size: 12px; line-height: 1.55; }
 .source-review-candidate-note strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 12px; }
 .source-error { margin: 10px 0; padding: 8px; border-left: 2px solid var(--error); color: var(--error); background: rgba(162, 67, 56, 0.07); font-size: 12px; line-height: 1.45; }
+.source-recovery-form { margin: 18px 0; padding: 16px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-subtle); }
+.source-recovery-form h5 { margin: 0 0 8px; font-size: 14px; }
+.source-recovery-form p { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.source-recovery-form fieldset { display: grid; gap: 12px; min-width: 0; margin: 16px 0; padding: 0; border: 0; }
+.source-recovery-form label { display: grid; gap: 6px; font-size: 12px; font-weight: 650; }
+.source-recovery-form input,
+.source-recovery-form textarea { font-size: 12px; font-weight: 400; }
+.source-recovery-form fieldset > p { margin: 0; }
 .source-flow__actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 14px; }
 .source-flow--working { display: flex; align-items: center; gap: 12px; }
 .source-flow--working h4 { margin: 0; }

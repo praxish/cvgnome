@@ -16,6 +16,18 @@
 - Document extraction is bounded. macOS samples parser-process-group memory
   and stops a worker observed above the threshold; this is not a hard allocation
   cap. Unsupported structured-parser platforms fail closed.
+- Document text may be readable even when resume fields are not recognized.
+  Header and Summary recognition covers selected common text layouts; there is
+  no OCR or general PDF layout understanding. For a first import with readable
+  text, **Complete details and keep files** can save a named incomplete profile
+  while retaining the sources. Files without readable text still require another
+  source or manual entry. Export and tailoring remain unavailable until there is
+  enough resume content.
+  Work history with wrapped or multiple columns may need manual completion;
+  unsupported layouts are left unasserted and reported as a partial import.
+- First-import resume preserves an unexpired preview and any submitted recovery
+  request. It does not autosave unsubmitted form edits or replace a complete
+  career-workspace backup. Retry an uncertain save with its original details.
 - Use the window close button, **CVGnome > Quit**, or **Cmd+Q** to get unsaved-draft
   protection. **Dock > Quit and system termination can bypass that protection**;
   save your work first. A crash, forced quit, or power loss can also lose unsaved
@@ -28,5 +40,5 @@
   A comprehensive assistive-technology audit and further layout polish remain
   follow-up work.
 
-Signed distribution, a graphical recovery workflow, broader fonts/platforms,
+Signed distribution, graphical workspace backup/restore, broader fonts/platforms,
 and continued accessibility improvements are tracked in the [roadmap](ROADMAP.md).

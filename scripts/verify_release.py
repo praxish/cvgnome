@@ -21,7 +21,7 @@ def verify(binary: Path) -> None:
     for name in modules:
         if name.startswith("_sysconfigdata_") and code_has_private_build_path(python_archive.extract(name)):
             raise SystemExit("Frozen Python build metadata exposes a developer home/temp path; rebuild with privacy hooks")
-    required_modules = {"cvgnome_engine", "cvgnome_engine.workspace_transfer",
+    required_modules = {"cvgnome_engine", "cvgnome_engine.workspace_transfer", "cvgnome_engine.source_recovery",
                         "cvgnome_engine.source_ingest.parser_memory"}
     if not required_modules <= set(modules) or any(
             name == LEGACY_ENGINE_PACKAGE or name.startswith(f"{LEGACY_ENGINE_PACKAGE}.") for name in modules):

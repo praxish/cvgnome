@@ -1489,6 +1489,22 @@ struct ProfileSourceScanResult {
     source_review_count: u64,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct ProfileSourceRecoveryPatch {
+    name: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    summary: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ResumedProfileSourceScan {
+    scan: ProfileSourceScanResult,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    recovery_patch: Option<ProfileSourceRecoveryPatch>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct BuiltSourceCounts {
@@ -1915,12 +1931,24 @@ struct EngineError {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "T: Deserialize<'de>"))]
 struct EngineEnvelope<T> {
     protocol_version: u32,
     id: Option<String>,
     ok: bool,
+    #[serde(default, deserialize_with = "deserialize_present_engine_result")]
     result: Option<T>,
     error: Option<EngineError>,
+}
+
+fn deserialize_present_engine_result<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    // Preserve successful explicit null for nullable methods; a missing field
+    // remains None and is rejected by the engine envelope validation.
+    T::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone)]
@@ -7240,6 +7268,62 @@ impl ProfileSourceScanResult {
     }
 }
 
+impl ProfileSourceRecoveryPatch {
+    fn normalized(self) -> Result<Self, String> {
+        Ok(Self {
+            name: normalized_profile_basics_text(
+                self.name,
+                "Name",
+                PROFILE_REVIEW_NAME_LIMIT_CHARS,
+                false,
+            )?,
+            summary: self
+                .summary
+                .map(|summary| {
+                    normalized_profile_basics_text(
+                        summary,
+                        "Summary",
+                        PROFILE_BASICS_SUMMARY_LIMIT_CHARS,
+                        true,
+                    )
+                })
+                .transpose()?,
+        })
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        validate_profile_basics_text(
+            &self.name,
+            "recovery name",
+            PROFILE_REVIEW_NAME_LIMIT_CHARS,
+            false,
+        )?;
+        validate_optional_profile_basics_text(
+            self.summary.as_deref(),
+            "recovery summary",
+            PROFILE_BASICS_SUMMARY_LIMIT_CHARS,
+            true,
+        )
+    }
+}
+
+impl ResumedProfileSourceScan {
+    fn validated(self) -> Result<Self, String> {
+        validate_uuid_receipt(&self.scan.scan_id)?;
+        validate_javascript_integer(self.scan.expires_at_ms, "source preview expiration")?;
+        if self.scan.expires_at_ms == 0 || self.scan.base_profile.is_some() {
+            return Err("The local engine returned an invalid first profile preview".to_string());
+        }
+        if let Some(patch) = &self.recovery_patch {
+            patch.validate()?;
+        }
+        Ok(Self {
+            scan: self.scan.validated_review_candidate_count()?,
+            recovery_patch: self.recovery_patch,
+        })
+    }
+}
+
 impl ProfileSourceBuildResult {
     fn validated_review_item_count(self) -> Result<Self, String> {
         source_review::validate_source_review_count(self.source_review_count)?;
@@ -7253,6 +7337,46 @@ impl ProfileSourceBuildResult {
             "source build receipt",
         )?;
         Ok(self)
+    }
+
+    fn validated_recovery(
+        self,
+        expected_scan_id: &str,
+        patch: &ProfileSourceRecoveryPatch,
+    ) -> Result<Self, String> {
+        validate_uuid_receipt(&self.scan_id)?;
+        validate_uuid_receipt(&self.profile_version_id)?;
+        validate_sha256(&self.checksum_sha256)?;
+        validate_javascript_integer(self.version_number, "profile version")?;
+        if self.scan_id != expected_scan_id || self.version_number == 0 {
+            return Err(
+                "The local engine returned a mismatched source recovery receipt".to_string(),
+            );
+        }
+        validate_profile_basics_text(
+            &self.profile_name,
+            "name",
+            PROFILE_REVIEW_NAME_LIMIT_CHARS,
+            false,
+        )?;
+        if patch.name.is_ascii() && self.profile_name != patch.name {
+            return Err("The local engine returned an inconsistent recovery name".to_string());
+        }
+        for count in [
+            self.source_counts.parsed,
+            self.source_counts.used,
+            self.source_counts.unused,
+            self.profile_counts.work_entries,
+            self.profile_counts.education_entries,
+            self.profile_counts.skill_groups,
+            self.profile_counts.evidence_claims,
+            self.profile_counts.preference_items,
+        ] {
+            validate_javascript_integer(count, "source recovery count")?;
+        }
+        // Name-only recovery can create an incomplete profile. Its renderable
+        // flag remains authoritative; export/tailoring keep their own guards.
+        self.validated_review_item_count()
     }
 }
 
@@ -7268,6 +7392,14 @@ fn canonical_import_params(source: StagedCanonicalProfile) -> Value {
 }
 
 fn discard_unfinished_source_reviews_params() -> Value {
+    json!({})
+}
+
+fn profile_source_recovery_params(scan_id: &str, patch: &ProfileSourceRecoveryPatch) -> Value {
+    json!({"scan_id": scan_id, "patch": patch})
+}
+
+fn profile_source_resume_params() -> Value {
     json!({})
 }
 
@@ -8989,6 +9121,52 @@ async fn build_profile_from_source_scan(
 }
 
 #[tauri::command]
+async fn recover_profile_sources(
+    app: tauri::AppHandle,
+    runtime: tauri::State<'_, EngineRuntime>,
+    scan_id: String,
+    patch: ProfileSourceRecoveryPatch,
+) -> Result<ProfileSourceBuildResult, String> {
+    let scan_id =
+        validated_source_scan_id(&scan_id).map_err(|error| format!("invalid_params: {error}"))?;
+    let patch = patch
+        .normalized()
+        .map_err(|error| format!("invalid_params: {error}"))?;
+    let result = {
+        let _operation_guard = runtime.operation_gate.lock().await;
+        run_engine_request::<ProfileSourceBuildResult>(
+            &app,
+            "profile.sources.recover",
+            profile_source_recovery_params(&scan_id, &patch),
+            ENGINE_SOURCE_BUILD_TIMEOUT,
+        )
+        .await
+    };
+    // A lost receipt can follow a durable recovery. Keep the scan and exact
+    // patch available for retry, and invalidate status even on bridge failure.
+    invalidate_status(&runtime).await;
+    result?.validated_recovery(&scan_id, &patch)
+}
+
+#[tauri::command]
+async fn resume_profile_source_scan(
+    app: tauri::AppHandle,
+    runtime: tauri::State<'_, EngineRuntime>,
+) -> Result<Option<ResumedProfileSourceScan>, String> {
+    let result = {
+        let _operation_guard = runtime.operation_gate.lock().await;
+        run_engine_request::<Option<ResumedProfileSourceScan>>(
+            &app,
+            "profile.sources.resume",
+            profile_source_resume_params(),
+            ENGINE_IMPORT_TIMEOUT,
+        )
+        .await?
+    };
+    result.map(ResumedProfileSourceScan::validated).transpose()
+}
+
+#[tauri::command]
 async fn discard_profile_source_scan(
     app: tauri::AppHandle,
     runtime: tauri::State<'_, EngineRuntime>,
@@ -10293,6 +10471,8 @@ pub fn run() {
             scan_profile_source_files,
             scan_profile_source_folder,
             build_profile_from_source_scan,
+            recover_profile_sources,
+            resume_profile_source_scan,
             discard_profile_source_scan,
             discard_unfinished_profile_source_reviews,
             reset_career_workspace,
@@ -13629,6 +13809,217 @@ mod tests {
     }
 
     #[test]
+    fn profile_source_recovery_patch_is_strict_normalized_and_bounded() {
+        let patch: ProfileSourceRecoveryPatch = serde_json::from_value(json!({
+            "name": "  Ada\u{00a0}Lovelace  ",
+            "summary": "\r\nBuilds\tlocal tools.\rReviews sources.\n"
+        }))
+        .unwrap();
+        let patch = patch.normalized().unwrap();
+        assert_eq!(patch.name, "Ada Lovelace");
+        assert_eq!(
+            patch.summary.as_deref(),
+            Some("Builds local tools.\nReviews sources.")
+        );
+        assert_eq!(
+            serde_json::to_value(&patch)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .len(),
+            2
+        );
+        let name_only: ProfileSourceRecoveryPatch =
+            serde_json::from_value(json!({"name": "Ada Lovelace", "summary": null})).unwrap();
+        assert!(name_only.normalized().unwrap().summary.is_none());
+
+        for malformed in [
+            json!({"name": "Ada"}),
+            json!({"summary": null}),
+            json!({"name": null, "summary": null}),
+            json!({"name": "Ada", "summary": 10}),
+            json!({"name": "Ada", "summary": null, "email": "not accepted"}),
+        ] {
+            assert!(serde_json::from_value::<ProfileSourceRecoveryPatch>(malformed).is_err());
+        }
+        for malformed in [
+            json!({"name": " ", "summary": null}),
+            json!({"name": "Ada\u{0000}Lovelace", "summary": null}),
+            json!({"name": "Ada\u{202e}Lovelace", "summary": null}),
+            json!({"name": "x".repeat(161), "summary": null}),
+            json!({"name": "Ada", "summary": " "}),
+            json!({"name": "Ada", "summary": "x".repeat(4001)}),
+            json!({"name": "Ada", "summary": "work\u{0000}history"}),
+        ] {
+            let patch: ProfileSourceRecoveryPatch = serde_json::from_value(malformed).unwrap();
+            assert!(patch.normalized().is_err());
+        }
+        let at_limits: ProfileSourceRecoveryPatch = serde_json::from_value(json!({
+            "name": "📄".repeat(160), "summary": "📄".repeat(4000)
+        }))
+        .unwrap();
+        assert!(at_limits.normalized().is_ok());
+    }
+
+    fn source_recovery_receipt_fixture() -> Value {
+        json!({
+            "scan_id": "4c3cf11d-98c5-4938-b761-9b7b6e1c7cb8",
+            "profile_version_id": "64aa9547-6ff7-42a9-a03d-c29c3605ce80",
+            "version_number": 1,
+            "created": true,
+            "checksum_sha256": "a".repeat(64),
+            "profile_name": "Ada Lovelace",
+            "renderable": false,
+            "source_counts": {"parsed": 0, "used": 0, "unused": 0},
+            "profile_counts": {
+                "work_entries": 0, "education_entries": 0, "skill_groups": 0,
+                "evidence_claims": 0, "preference_items": 0
+            },
+            "warnings": [], "review_item_count": 0, "source_review_count": 0
+        })
+    }
+
+    #[test]
+    fn profile_source_recovery_accepts_incomplete_and_retry_receipts_but_rejects_malformed() {
+        let scan_id = "4c3cf11d-98c5-4938-b761-9b7b6e1c7cb8";
+        let patch = ProfileSourceRecoveryPatch {
+            name: "Ada Lovelace".to_string(),
+            summary: None,
+        };
+        let fixture = source_recovery_receipt_fixture();
+        for created in [true, false] {
+            let mut receipt = fixture.clone();
+            receipt["created"] = json!(created);
+            let receipt: ProfileSourceBuildResult = serde_json::from_value(receipt).unwrap();
+            assert!(
+                !receipt
+                    .validated_recovery(scan_id, &patch)
+                    .unwrap()
+                    .renderable
+            );
+        }
+        for (field, value) in [
+            ("scan_id", json!("64aa9547-6ff7-42a9-a03d-c29c3605ce80")),
+            ("profile_version_id", json!("not-an-identifier")),
+            ("version_number", json!(0)),
+            ("checksum_sha256", json!("not-a-checksum")),
+            ("profile_name", json!("Another person")),
+            (
+                "review_item_count",
+                json!(PROFILE_SOURCE_REVIEW_CANDIDATE_LIMIT + 1),
+            ),
+            ("source_review_count", json!(241)),
+        ] {
+            let mut receipt = fixture.clone();
+            receipt[field] = value;
+            let receipt: ProfileSourceBuildResult = serde_json::from_value(receipt).unwrap();
+            assert!(
+                receipt.validated_recovery(scan_id, &patch).is_err(),
+                "{field}"
+            );
+        }
+        let mut huge_count = fixture.clone();
+        huge_count["source_counts"]["parsed"] = json!(JAVASCRIPT_MAX_SAFE_INTEGER + 1);
+        let receipt: ProfileSourceBuildResult = serde_json::from_value(huge_count).unwrap();
+        assert!(receipt.validated_recovery(scan_id, &patch).is_err());
+        let mut missing = fixture.clone();
+        missing.as_object_mut().unwrap().remove("renderable");
+        assert!(serde_json::from_value::<ProfileSourceBuildResult>(missing).is_err());
+        let mut unknown = fixture;
+        unknown["private_path"] = json!("not allowed");
+        assert!(serde_json::from_value::<ProfileSourceBuildResult>(unknown).is_err());
+    }
+
+    #[test]
+    fn profile_source_resume_preserves_pinned_patch_and_null_result() {
+        let fixture = json!({
+            "scan": {
+                "scan_id": "4c3cf11d-98c5-4938-b761-9b7b6e1c7cb8",
+                "expires_at_ms": 1_800_000_000_000_u64, "base_profile": null,
+                "file_counts": {"discovered": 1, "staged": 1, "parsed": 0, "duplicates": 0, "skipped": 0, "failed": 1},
+                "source_counts": {"resume": 0, "evidence": 0, "preferences": 0, "unclassified": 1},
+                "format_counts": {"docx": 1}, "warnings": [], "can_build": false,
+                "review_candidate_count": 0, "source_review_count": 0
+            },
+            "recovery_patch": {"name": "Ada Lovelace", "summary": null}
+        });
+        let resumed: ResumedProfileSourceScan = serde_json::from_value(fixture.clone()).unwrap();
+        let resumed = resumed.validated().unwrap();
+        assert!(!resumed.scan.can_build);
+        assert_eq!(resumed.recovery_patch.unwrap().name, "Ada Lovelace");
+        let mut unpinned = fixture.clone();
+        unpinned["recovery_patch"] = Value::Null;
+        let resumed: ResumedProfileSourceScan = serde_json::from_value(unpinned).unwrap();
+        assert!(resumed.validated().unwrap().recovery_patch.is_none());
+
+        let mut missing_patch = fixture.clone();
+        missing_patch
+            .as_object_mut()
+            .unwrap()
+            .remove("recovery_patch");
+        assert!(serde_json::from_value::<ResumedProfileSourceScan>(missing_patch).is_err());
+        let mut unknown = fixture.clone();
+        unknown["private_path"] = json!("not allowed");
+        assert!(serde_json::from_value::<ResumedProfileSourceScan>(unknown).is_err());
+        for (field, value) in [
+            ("scan_id", json!("not-an-identifier")),
+            ("expires_at_ms", json!(0)),
+            (
+                "review_candidate_count",
+                json!(PROFILE_SOURCE_REVIEW_CANDIDATE_LIMIT + 1),
+            ),
+        ] {
+            let mut malformed = fixture.clone();
+            malformed["scan"][field] = value;
+            let resumed: ResumedProfileSourceScan = serde_json::from_value(malformed).unwrap();
+            assert!(resumed.validated().is_err(), "{field}");
+        }
+
+        let null_envelope =
+            json!({"protocol_version": 1, "id": "request", "ok": true, "result": null});
+        let envelope: EngineEnvelope<Option<ResumedProfileSourceScan>> =
+            serde_json::from_value(null_envelope.clone()).unwrap();
+        assert!(matches!(envelope.result, Some(None)));
+        assert!(
+            serde_json::from_value::<EngineEnvelope<ProfileSourceBuildResult>>(null_envelope)
+                .is_err()
+        );
+        let absent: EngineEnvelope<Option<ResumedProfileSourceScan>> =
+            serde_json::from_value(json!({
+                "protocol_version": 1, "id": "request", "ok": true
+            }))
+            .unwrap();
+        assert!(absent.result.is_none());
+        let error: EngineEnvelope<Option<ResumedProfileSourceScan>> =
+            serde_json::from_value(json!({
+                "protocol_version": 1, "id": "request", "ok": false,
+                "error": {"code": "profile_source_scan_not_found", "message": "Scan missing"}
+            }))
+            .unwrap();
+        assert!(error.result.is_none());
+        assert!(error.error.is_some());
+        let _recover_command = recover_profile_sources;
+        let _resume_command = resume_profile_source_scan;
+    }
+
+    #[test]
+    fn profile_source_recovery_terminal_error_codes_cross_the_bridge() {
+        for code in [
+            "profile_source_scan_not_recoverable",
+            "profile_source_recovery_conflict",
+            "profile_source_scan_expired",
+            "profile_source_scan_not_found",
+            "profile_source_base_changed",
+        ] {
+            let error = safe_engine_error(EngineError {
+                code: code.to_string(),
+                message: "Scan cannot be recovered".to_string(),
+            });
+            assert_eq!(error, format!("{code}: Scan cannot be recovered"));
+        }
+    }
+
+    #[test]
     fn opportunity_input_is_strict_normalized_and_character_bounded() {
         let input: SaveOpportunityInput = serde_json::from_value(json!({
             "title": "  Product Manager  ",
@@ -13834,6 +14225,132 @@ mod tests {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+
+        // The same gate also exercises the real first-import recovery boundary,
+        // including native staging, request serialization and typed responses.
+        fn recovery_rpc<T: DeserializeOwned>(data_dir: &Path, method: &str, params: Value) -> T {
+            let mut command =
+                if let Some(binary) = std::env::var_os("CVGNOME_CONTRACT_ENGINE_BINARY") {
+                    Command::new(binary)
+                } else {
+                    let mut command =
+                        Command::new(std::env::var_os("CVGNOME_CONTRACT_PYTHON").unwrap());
+                    command.args(["-m", "cvgnome_engine"]);
+                    command.env(
+                        "PYTHONPATH",
+                        Path::new(env!("CARGO_MANIFEST_DIR")).join("../engine/src"),
+                    );
+                    command
+                };
+            let request_id = Uuid::new_v4().to_string();
+            let mut child = command
+                .args(["request", "--data-dir"])
+                .arg(data_dir)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("could not start recovery RPC engine");
+            let request = json!({
+                "protocol_version": ENGINE_PROTOCOL_VERSION,
+                "id": request_id, "method": method, "params": params
+            });
+            let mut input = serde_json::to_vec(&request).unwrap();
+            input.push(b'\n');
+            child.stdin.take().unwrap().write_all(&input).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while child.try_wait().unwrap().is_none() {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    panic!("recovery RPC exceeded its bounded deadline: {method}");
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let output = child.wait_with_output().unwrap();
+            assert!(output.status.success(), "engine exited during {method}");
+            let envelope: EngineEnvelope<T> = serde_json::from_slice(&output.stdout)
+                .unwrap_or_else(|error| {
+                    panic!("invalid typed recovery RPC response for {method}: {error}")
+                });
+            assert_eq!(envelope.protocol_version, ENGINE_PROTOCOL_VERSION);
+            assert_eq!(envelope.id.as_deref(), Some(request_id.as_str()));
+            assert!(envelope.ok, "{method}: {:?}", envelope.error);
+            assert!(envelope.error.is_none());
+            envelope.result.expect("successful RPC must have a result")
+        }
+
+        let directory = tempfile::tempdir().unwrap();
+        let data_dir = directory.path().join("vault");
+        let original = directory.path().join("synthetic-first-profile.txt");
+        let original_bytes =
+            b"Name: Avery Example\nCareer material to organize and review locally.\n";
+        fs::write(&original, original_bytes).unwrap();
+        prepare_data_dir(&data_dir).unwrap();
+        let absent: Option<ResumedProfileSourceScan> = recovery_rpc(
+            &data_dir,
+            "profile.sources.resume",
+            profile_source_resume_params(),
+        );
+        assert!(absent.is_none());
+        let scan_id = Uuid::new_v4().to_string();
+        let staged =
+            stage_source_files(std::slice::from_ref(&original), &data_dir, &scan_id).unwrap();
+        let scan: ProfileSourceScanResult = recovery_rpc(
+            &data_dir,
+            "profile.sources.preview",
+            serde_json::to_value(staged).unwrap(),
+        );
+        let scan = scan.validated_review_candidate_count().unwrap();
+        assert_eq!(scan.scan_id, scan_id);
+        assert_eq!(scan.file_counts.parsed, 1);
+        assert!(!scan.can_build);
+        let resumed: Option<ResumedProfileSourceScan> = recovery_rpc(
+            &data_dir,
+            "profile.sources.resume",
+            profile_source_resume_params(),
+        );
+        let resumed = resumed.unwrap().validated().unwrap();
+        assert_eq!(resumed.scan.scan_id, scan_id);
+        assert!(resumed.recovery_patch.is_none());
+        let patch = ProfileSourceRecoveryPatch {
+            name: "  Avery Example  ".to_string(),
+            summary: None,
+        }
+        .normalized()
+        .unwrap();
+        let first: ProfileSourceBuildResult = recovery_rpc(
+            &data_dir,
+            "profile.sources.recover",
+            profile_source_recovery_params(&scan_id, &patch),
+        );
+        let first = first.validated_recovery(&scan_id, &patch).unwrap();
+        assert!(!first.renderable);
+        assert_eq!(first.version_number, 1);
+        let retry: ProfileSourceBuildResult = recovery_rpc(
+            &data_dir,
+            "profile.sources.recover",
+            profile_source_recovery_params(&scan_id, &patch),
+        );
+        let retry = retry.validated_recovery(&scan_id, &patch).unwrap();
+        assert_eq!(retry.profile_version_id, first.profile_version_id);
+        assert_eq!(retry.checksum_sha256, first.checksum_sha256);
+        assert_eq!(retry.version_number, first.version_number);
+        let status: EngineStatusWire = recovery_rpc(&data_dir, "system.status", json!({}));
+        let status = status.validated().unwrap();
+        assert_eq!(status.profile_versions, 1);
+        assert_eq!(status.source_imports, 1);
+        assert_eq!(status.source_previews, 0);
+        assert_eq!(status.retained_source_files, 1);
+        assert_eq!(status.retained_source_bytes, original_bytes.len() as u64);
+        assert_eq!(status.latest_profile_renderable, Some(false));
+        let completed: Option<ResumedProfileSourceScan> = recovery_rpc(
+            &data_dir,
+            "profile.sources.resume",
+            profile_source_resume_params(),
+        );
+        assert!(completed.is_none());
+        assert_eq!(fs::read(original).unwrap(), original_bytes);
     }
 
     #[test]

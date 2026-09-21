@@ -74,6 +74,28 @@ _DATE_RANGE_RE = re.compile(
     r"^\s*(?P<start>.+?)\s+(?:-|–|—|to)\s+(?P<end>.+?)\s*$",
     re.I,
 )
+_DATE_TOKEN = (
+    r"(?:[12][0-9]{3}-(?:0[1-9]|1[0-2])|(?:0?[1-9]|1[0-2])/[12][0-9]{3}|"
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+    r"Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    r"\.?\s+[12][0-9]{3}|[12][0-9]{3})"
+)
+_CONVENTIONAL_DATE_RANGE_RE = re.compile(
+    rf"(?P<start>{_DATE_TOKEN})\s*(?:-|–|—|\bto\b)\s*(?P<end>{_DATE_TOKEN}|present|current)",
+    re.I,
+)
+_ROLE_WORDS = frozenset({
+    "analyst", "architect", "consultant", "coordinator", "designer", "developer",
+    "director", "editor", "engineer", "intern", "lead", "manager", "officer",
+    "president", "producer", "professor", "researcher", "scientist", "specialist",
+    "supervisor", "technician",
+})
+_EMPLOYER_WORDS = frozenset({
+    "agency", "associates", "bank", "center", "centre", "co", "college", "company",
+    "corp", "corporation", "engines", "foundation", "group", "hospital", "inc",
+    "institute", "labs", "laboratories", "llc", "llp", "ltd", "partners", "plc",
+    "school", "solutions", "studio", "studios", "systems", "technologies", "university",
+})
 _SECTION_TITLES = {
     "experience": "work",
     "work experience": "work",
@@ -87,6 +109,7 @@ _SECTION_TITLES = {
 }
 _NON_NAME_HEADINGS = frozenset(
     {
+        "cv",
         "resume",
         "curriculum vitae",
         "summary",
@@ -96,6 +119,19 @@ _NON_NAME_HEADINGS = frozenset(
         *_SECTION_TITLES.keys(),
     }
 )
+_SUMMARY_HEADINGS = frozenset({"summary", "professional summary", "executive summary", "profile"})
+_HEADER_BODY_HEADINGS = frozenset({
+    *_SECTION_TITLES, *_SUMMARY_HEADINGS, "projects", "selected projects",
+    "certifications", "certificates", "awards", "publications", "references",
+    "professional references", "achievements", "selected achievements",
+})
+_TITLE_OR_ORGANIZATION_WORDS = frozenset({
+    "analyst", "architect", "consultant", "consulting", "designer", "developer",
+    "director", "engineer", "engineering", "executive", "head", "lead", "leader",
+    "manager", "officer", "president", "principal", "scientist", "specialist",
+    "senior", "junior", "staff", "company", "corporation", "inc", "llc", "ltd",
+    "university", "college",
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -897,6 +933,30 @@ def _parse_date_range(value: str) -> tuple[str, str]:
     )
 
 
+def _conventional_work_header(value: str, *, person_names: set[str]) -> tuple[str, str] | None:
+    if len(value) > 360 or _has_header_contact(value) or re.search(r"https?://|www\.", value, re.I):
+        return None
+    # Split every delimiter: an extra date/location/contact column is not part
+    # of an employer name. ASCII hyphens inside names/titles are not delimiters.
+    parts = [part.strip() for part in re.split(r"\s*(?:\||—|–)\s*|\s+@\s+", value)]
+    if len(parts) != 2 or any(not part or len(part) > 180 for part in parts):
+        return None
+    roles = [index for index, part in enumerate(parts) if _ROLE_WORDS.intersection(_key(part).split())]
+    if len(roles) != 1:
+        return None
+    position, employer = parts[roles[0]], parts[1 - roles[0]]
+    if any(_key(part) in person_names for part in parts) or any("@" in part for part in parts):
+        return None
+    # The @ form states a relationship. Pipe/dash columns need an organization
+    # signal as well as a role signal; otherwise company, person and location
+    # columns are too easy to confuse. Explicit labelled fields remain separate.
+    if not re.search(r"\s+@\s+", value) and not _EMPLOYER_WORDS.intersection(_key(employer).split()):
+        return None
+    if not re.search(r"[A-Za-zÀ-ÖØ-öø-ÿ]", employer) or employer.endswith(("!", "?")):
+        return None
+    return position, employer
+
+
 def _blocks(lines: list[str]) -> list[list[tuple[int, str]]]:
     blocks: list[list[tuple[int, str]]] = []
     current: list[tuple[int, str]] = []
@@ -955,6 +1015,104 @@ def _looks_like_name(value: str) -> bool:
     return all(word[0].isupper() for word in words)
 
 
+def _has_header_contact(value: str) -> bool:
+    if _EMAIL_RE.search(value):
+        return True
+    # An unlabelled phone is common in resume headers. Requiring 10–15 digits
+    # avoids treating ordinary year ranges or dates as contact evidence.
+    return any(
+        10 <= len(re.sub(r"\D", "", match.group())) <= 15
+        for match in re.finditer(r"(?<!\w)\+?\d[\d () .-]{8,}\d(?!\w)", value)
+    )
+
+
+def _plain_heading(value: str) -> str:
+    text = _clean_markdown(value)
+    # Do not mistake a JSON property such as '"profile": {' for a heading.
+    return _key(text) if re.fullmatch(r"[A-Za-z][A-Za-z ]*:? *", text) else ""
+
+
+def _header_name(lines: list[str]) -> tuple[int, str, str] | None:
+    header: list[tuple[int, str]] = []
+    for number, raw in enumerate(lines[:80], start=1):
+        text = _clean_markdown(raw, max_chars=500)
+        if _plain_heading(text) in _HEADER_BODY_HEADINGS:
+            break
+        if text:
+            header.append((number, raw))
+        if len(header) >= 12:
+            break
+    contacts = [index for index, (_number, raw) in enumerate(header) if _has_header_contact(raw)]
+    if not contacts:
+        return None
+    candidates: dict[str, tuple[int, str, str, bool]] = {}
+    for index, (number, raw) in enumerate(header):
+        if not any(abs(index - contact) <= 3 for contact in contacts):
+            continue
+        text = _clean_markdown(raw, max_chars=500)
+        # A PDF footer may be emitted before its visual header. Permit a name
+        # next to delimited contact information, but do not split arbitrary
+        # title/company lines into asserted names.
+        fragments = re.split(r"\s*[|•·]\s*", text) if _has_header_contact(text) else [text]
+        for fragment in fragments:
+            if (
+                len(fragment) > 120
+                or not _looks_like_name(fragment)
+                or re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ\s'.-]*", fragment) is None
+                or _TITLE_OR_ORGANIZATION_WORDS.intersection(_key(fragment).split())
+            ):
+                continue
+            key = _key(fragment)
+            standalone = len(fragments) == 1
+            previous = candidates.get(key)
+            # Case-only duplicates are the same identity. Prefer the standalone
+            # header spelling and its evidence over an earlier PDF footer.
+            if previous is None or (standalone and not previous[3]):
+                candidates[key] = (number, fragment, raw, standalone)
+    if len(candidates) != 1:
+        return None  # Multiple people/locations require explicit review.
+    number, name, evidence, _standalone = next(iter(candidates.values()))
+    return number, name, evidence
+
+
+def _leading_summary(lines: list[str]) -> tuple[int, int, str, str] | None:
+    for offset, raw in enumerate(lines[:80]):
+        title = _plain_heading(raw)
+        if title not in _SUMMARY_HEADINGS:
+            if title in _HEADER_BODY_HEADINGS:
+                return None  # A role's later "Summary" is not the person's summary.
+            continue
+        pieces: list[str] = []
+        last_line = offset + 1
+        for following_offset in range(offset + 1, min(len(lines), offset + 9)):
+            following = lines[following_offset]
+            text = _clean_markdown(following, max_chars=1_000)
+            if not text:
+                if pieces:
+                    break
+                continue
+            if (
+                _HEADING_RE.match(following)
+                or _plain_heading(text) in _HEADER_BODY_HEADINGS
+                or _KEY_VALUE_RE.match(following)
+                or _BULLET_RE.match(following)
+                or (len(text) <= 60 and not text.endswith((".", "!", "?")) and (
+                    text.isupper() or _looks_like_name(text)
+                    or (pieces and pieces[-1].endswith((".", "!", "?")))
+                ))
+            ):
+                break
+            pieces.append(text)
+            last_line = following_offset + 1
+            if len(" ".join(pieces)) >= 1_000:
+                break
+        if pieces:
+            return (offset + 1, last_line, _clean_text(" ".join(pieces), max_chars=1_000),
+                    "\n".join(lines[offset:last_line]))
+        return None
+    return None
+
+
 def _extract_text_profile(
     profile: dict[str, Any],
     *,
@@ -963,28 +1121,20 @@ def _extract_text_profile(
     limits: SynthesisLimits,
 ) -> None:
     lines = source.text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    nonempty_first = [
-        (index, line)
-        for index, line in enumerate(lines[:10], start=1)
-        if _clean_markdown(line)
-    ]
-    has_early_contact = any(
-        _EMAIL_RE.search(line) or _key(line).startswith(("phone", "email"))
-        for _index, line in nonempty_first
-    )
-    if nonempty_first and has_early_contact:
-        first_number, first_line = nonempty_first[0]
-        if _looks_like_name(first_line):
-            name = _clean_markdown(first_line, max_chars=120)
-            _recorded_basic(
-                profile,
-                key="name",
-                value=name,
-                source=source,
-                locator=_line_locator(first_number),
-                evidence=first_line,
-                provenance=provenance,
-            )
+    identity = _header_name(lines)
+    if identity is not None:
+        number, name, evidence = identity
+        _recorded_basic(
+            profile, key="name", value=name, source=source,
+            locator=_line_locator(number), evidence=evidence, provenance=provenance,
+        )
+    summary = _leading_summary(lines)
+    if summary is not None:
+        start, end, text, evidence = summary
+        _recorded_basic(
+            profile, key="summary", value=text, source=source,
+            locator=_line_locator(start, end), evidence=evidence, provenance=provenance,
+        )
 
     for line_number, raw_line in enumerate(lines, start=1):
         key_value = _KEY_VALUE_RE.match(raw_line)
@@ -1013,7 +1163,7 @@ def _extract_text_profile(
                 evidence=raw_line,
                 provenance=provenance,
             )
-        elif not normalized_key:
+        elif not normalized_key or (identity is not None and line_number == identity[0]):
             email = _EMAIL_RE.search(raw_line)
             if email:
                 _recorded_basic(
@@ -1261,19 +1411,19 @@ def _extract_text_profile(
             current_section = ""
             continue
 
-        # A conservative conventional-resume pattern: one role/company line
-        # separated by a visible delimiter, immediately followed by a date
-        # range. Requiring both signals avoids promoting arbitrary prose.
-        parts = [
-            _clean_text(part, max_chars=180)
-            for part in re.split(r"\s+(?:\||@|—|–)\s+", heading_text, maxsplit=1)
-        ]
-        if len(parts) != 2 or not all(parts) or offset + 1 >= len(lines):
+        # This unlabelled heuristic requires exactly two identifiable columns
+        # and a separate date-only range. Never reuse the more permissive parser
+        # for explicit Dates fields: prose and PDF footers also contain dashes.
+        basics = profile.get("basics") if isinstance(profile.get("basics"), dict) else {}
+        person_names = {_key(basics.get("name")), _key(identity[1]) if identity else ""} - {""}
+        work_header = _conventional_work_header(_clean_markdown(raw_line, max_chars=500), person_names=person_names)
+        if work_header is None or offset + 1 >= len(lines):
             continue
-        date_line = _clean_markdown(lines[offset + 1], max_chars=180)
-        start, end = _parse_date_range(date_line)
-        if not (start or end):
+        date_line = lines[offset + 1].strip()
+        dates = _CONVENTIONAL_DATE_RANGE_RE.fullmatch(date_line)
+        if dates is None:
             continue
+        start, end = dates.group("start"), dates.group("end")
         highlights: list[str] = []
         last_line = line_number + 1
         for following_offset in range(offset + 2, len(lines)):
@@ -1297,7 +1447,7 @@ def _extract_text_profile(
             if len(highlights) >= 12:
                 break
 
-        work: dict[str, Any] = {"position": parts[0], "name": parts[1]}
+        work: dict[str, Any] = {"position": work_header[0], "name": work_header[1]}
         if start:
             work["startDate"] = start
         if end:
@@ -1387,6 +1537,13 @@ def synthesize_canonical_profile(
     _relock_existing_basics(profile, existing)
 
     facts = provenance.sorted_facts()
+    work_source_ids = {fact["source_id"] for fact in facts if fact.get("profile_section") == "work"}
+    if any(
+        source.source_id not in work_source_ids
+        and any(_SECTION_TITLES.get(_plain_heading(line)) == "work" for line in source.text.splitlines())
+        for source in normalized_sources
+    ):
+        report["warnings"] = sorted({*report["warnings"], "work_section_not_imported"})
     action_counts: dict[str, int] = {}
     for fact in facts:
         action = str(fact.get("action") or "matched")

@@ -4336,6 +4336,10 @@ def _validate_source_scan_buildable(scan: sqlite3.Row) -> None:
             "The source preview report is invalid.",
         ) from exc
     ui = report.get("ui") if isinstance(report, dict) else None
+    if isinstance(draft_profile, dict) and isinstance(report, dict):
+        from .source_recovery import validate_recovered_scan
+        if validate_recovered_scan(scan, draft_profile, report):
+            return
     if (
         not isinstance(draft_profile, dict)
         or not isinstance(ui, dict)
@@ -4661,7 +4665,9 @@ def commit_profile_source_scan(data_dir: Path, scan_id: str) -> dict[str, Any]:
             "UPDATE profile_source_scans SET status = 'committing', updated_at_ms = ? WHERE id = ?",
             (_utc_now_ms(), scan_id),
         )
-        connection.commit()
+        # Keep the write transaction through bounded source verification and
+        # publication. A process exit must roll this marker back to preview;
+        # persisting it early strands an explicitly confirmed recovery request.
 
         items = connection.execute(
             """
@@ -4700,7 +4706,6 @@ def commit_profile_source_scan(data_dir: Path, scan_id: str) -> dict[str, Any]:
                 created_blob_paths.append(target)
             blob_metadata[checksum] = (relative_path, len(content))
 
-        connection.execute("BEGIN IMMEDIATE")
         committed_result = _committed_scan_result(connection, scan_id)
         if committed_result is not None:
             connection.rollback()

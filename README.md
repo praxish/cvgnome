@@ -37,6 +37,17 @@ Review the resulting profile, correct its details, then export a resume or add a
 role. **Models** is optional and can be left unconfigured. Nothing is submitted
 to an employer by CVGnome.
 
+If your first import has readable text but cannot build a complete profile,
+choose **Complete details and keep files**. Confirm your name and optionally add
+a summary. Leaving the summary blank keeps any summary already extracted. The
+saved profile retains its original documents; finish missing sections in Profile
+review before exporting. A file being read successfully does not mean every
+resume field was recognized.
+
+Use **Resume import review** for an unfinished first-profile import. After an uncertain
+save, retry the exact request shown by the app before changing its details.
+Unsubmitted edits are not autosaved, and temporary source previews expire.
+
 Save a [career workspace backup](docs/BACKUP_AND_RECOVERY.md) before moving
 computers or changing a workspace. Exported resumes do not contain the complete
 history, memories, tracker, or retained documents.

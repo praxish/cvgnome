@@ -2558,6 +2558,63 @@ def _smoke_test(binary: Path) -> None:
             raise SystemExit("The frozen Python sidecar could not export the manual profile")
 
 
+def _first_import_smoke_test(binary: Path) -> None:
+    """A real PDF header/footer and an incomplete first import must survive packaging."""
+    from reportlab.pdfgen.canvas import Canvas
+    output = io.BytesIO()
+    canvas = Canvas(output)
+    # PDF content order deliberately differs from visual order.
+    canvas.drawString(60, 40, "Avery Example | Systems Engineer | avery@example.test")
+    for index, line in enumerate(("AVERY EXAMPLE", "avery@example.test", "PROFILE",
+                                 "Builds reliable local tools for individual users.", "SKILLS", "Python, SQL")):
+        canvas.drawString(60, 760 - index * 20, line)
+    canvas.save()
+    for source_format, content in (("pdf", output.getvalue()), ("txt", b"Career material to organize locally.")):
+        with tempfile.TemporaryDirectory(prefix="cvgnome-first-import-smoke-") as directory:
+            def request(method: str, params: dict[str, object]) -> object:
+                request_id = str(uuid.uuid4())
+                completed = subprocess.run([str(binary), "request", "--data-dir", directory],
+                    input=json.dumps({"protocol_version": EXPECTED_PROTOCOL_VERSION,
+                                      "id": request_id, "method": method, "params": params}) + "\n",
+                    capture_output=True, text=True, timeout=60, check=False)
+                response = json.loads(completed.stdout)
+                if completed.returncode or response.get("id") != request_id or not response.get("ok"):
+                    raise SystemExit(f"The packaged first-import workflow failed at {method}")
+                return response["result"]
+
+            if request("profile.sources.resume", {}) is not None:
+                raise SystemExit("A fresh workspace unexpectedly has a pending preview")
+            scan_id = str(uuid.uuid4())
+            relative = f"imports/staging/{scan_id}/0000.{source_format}"
+            staged = Path(directory, relative)
+            staged.parent.mkdir(parents=True, mode=0o700)
+            staged.write_bytes(content)
+            preview = request("profile.sources.preview", {"scan_id": scan_id, "sources": [{
+                "ordinal": 0, "managed_relative_path": relative, "display_name": f"fictional-resume.{source_format}",
+                "format": source_format, "byte_size": len(content), "checksum_sha256": hashlib.sha256(content).hexdigest(),
+            }], "file_counts": {"discovered": 1, "staged": 1, "skipped": 0}, "scan_issues": {}})
+            resumed = request("profile.sources.resume", {})
+            if resumed != {"scan": preview, "recovery_patch": None}:
+                raise SystemExit("The packaged first import did not resume its exact preview")
+            if source_format == "pdf":
+                if not preview["can_build"]:
+                    raise SystemExit("The packaged PDF header/footer could not build a profile")
+                result = request("profile.sources.commit", {"scan_id": scan_id})
+                if result["profile_name"] != "AVERY EXAMPLE" or not result["renderable"]:
+                    raise SystemExit("The packaged PDF import lost its header identity or content")
+            else:
+                if preview["can_build"]:
+                    raise SystemExit("The packaged importer invented missing identity details")
+                params = {"scan_id": scan_id, "patch": {"name": "Avery Example", "summary": None}}
+                result = request("profile.sources.recover", params)
+                retried = request("profile.sources.recover", params)
+                if (result["renderable"] or result["profile_name"] != "Avery Example"
+                        or retried["profile_version_id"] != result["profile_version_id"]):
+                    raise SystemExit("The packaged incomplete-profile recovery or exact retry failed")
+            if request("profile.sources.resume", {}) is not None:
+                raise SystemExit("A committed first import still has a pending preview")
+
+
 def _source_review_smoke_test(binary: Path) -> None:
     """Exercise the new import/queued-review boundary in the frozen package."""
     with tempfile.TemporaryDirectory(prefix="cvgnome-source-review-smoke-") as directory:
@@ -2840,6 +2897,7 @@ def main() -> int:
         if not target.is_file():
             raise SystemExit("No target sidecar exists; run npm run engine:build first")
         _smoke_test(target)
+        _first_import_smoke_test(target)
         _source_review_smoke_test(target)
         _memory_smoke_test(target)
         _transfer_smoke_test(target)
@@ -2920,6 +2978,7 @@ def main() -> int:
 
     source = dist_dir / f"cvgnome-engine{extension}"
     _smoke_test(source)
+    _first_import_smoke_test(source)
     _source_review_smoke_test(source)
     _memory_smoke_test(source)
     _transfer_smoke_test(source)

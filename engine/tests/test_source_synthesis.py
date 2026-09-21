@@ -283,6 +283,85 @@ Impact: Launched a decision system used by 200 customers.
         self.assertEqual(prepared["basics"]["name"], "Ada Lovelace")
         self.assertTrue(prepared["meta"]["source_ingest"]["facts"])
 
+    def test_header_identity_never_uses_ambiguous_names_or_reference_contacts(self) -> None:
+        cases = (
+            "Avery Example\nJordan Sample\ncontact@example.test\nSummary\nBuilds useful tools.",
+            "Avery Example\nNew York\navery@example.test\nSummary\nBuilds useful tools.",
+            "Product Manager\ncontact@example.test\nSummary\nBuilds useful tools.",
+            "Example Corporation\ncontact@example.test\nExperience\nWork details.",
+            "Resume\nExperience\nWork details.\nReferences\nJordan Sample\njordan@example.test",
+            f"{'A' * 60} {'B' * 60}\ncontact@example.test\nSummary\nBuilds useful tools.",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                profile, _report = synthesize_canonical_profile(
+                    existing_profile=None, sources=[_source("synthetic.txt", text)],
+                )
+                self.assertNotIn("name", profile.get("basics", {}))
+
+    def test_summary_requires_a_leading_explicit_section_and_preserves_confirmed_basics(self) -> None:
+        text = ("avery@example.test\nAvery Example\nSummary\n"
+                "Builds useful tools for busy teams.\n"
+                "Experience\nOperations Manager | Example Systems\nJanuary 2020 - Present")
+        existing = {"basics": {"name": "Confirmed Name", "summary": "Confirmed summary."}}
+        profile, _report = synthesize_canonical_profile(
+            existing_profile=existing, sources=[_source("synthetic.txt", text)],
+        )
+        self.assertEqual(profile["basics"]["name"], "Confirmed Name")
+        self.assertEqual(profile["basics"]["summary"], "Confirmed summary.")
+        self.assertEqual(existing, {"basics": {"name": "Confirmed Name", "summary": "Confirmed summary."}})
+        for text in (
+            "Avery Example\navery@example.test\nBuilds useful tools for busy teams.",
+            "Avery Example\navery@example.test\nExperience\nSummary\nBuilt tools in a past role.",
+            json.dumps({"profile": {"basics": {"name": "Avery Example", "email": "avery@example.test"}}}, indent=2),
+        ):
+            profile, _report = synthesize_canonical_profile(
+                existing_profile=None, sources=[_source("synthetic.txt", text)],
+            )
+            self.assertNotIn("summary", profile.get("basics", {}))
+
+    def test_conventional_work_requires_clear_columns_and_date_only_range(self) -> None:
+        def synthesize(header: str, date: str):
+            return synthesize_canonical_profile(existing_profile=None, sources=[_source(
+                "synthetic.txt", "Avery Example\navery@example.test\nExperience\n"
+                + header + "\n" + date + "\n- Built practical tools.",
+            )])
+
+        for header in ("Operations Manager | Example Systems", "Example Systems | Operations Manager",
+                       "Operations Manager @ Example"):
+            for date in ("January 2020 - Present", "Jan. 2020 – December 2024", "2020 - 2024",
+                         "2020-01 — current", "01/2020 to 12/2024"):
+                with self.subTest(header=header, date=date):
+                    profile, report = synthesize(header, date)
+                    self.assertEqual(len(profile["work"]), 1)
+                    self.assertEqual(profile["work"][0]["position"], "Operations Manager")
+                    self.assertEqual(profile["work"][0]["name"], "Example" if " @ " in header else "Example Systems")
+                    self.assertNotIn("work_section_not_imported", report["warnings"])
+        rejected = (
+            ("Operations Manager | Example Systems", "Built reporting - improved delivery."),
+            ("Operations Manager | Example Systems", "- Built tools – serving teams."),
+            ("Operations Manager | Example Systems", "January 2020 - Present | Remote"),
+            ("Operations Manager | Example Systems", "2020-99 - Present"),
+            ("Avery Example | Operations Lead | avery@example.test", "2020 - Present"),
+            ("Avery Example | Operations Lead", "2020 - Present"),
+            ("Operations Manager | Example Systems | Remote", "2020 - Present"),
+            ("Operations Manager | Product Director", "2020 - Present"),
+            ("Operations Manager | New York", "2020 - Present"),
+        )
+        for header, date in rejected:
+            with self.subTest(header=header, date=date):
+                profile, report = synthesize(header, date)
+                self.assertFalse(profile.get("work"))
+                self.assertIn("work_section_not_imported", report["warnings"])
+
+    def test_explicit_work_fields_keep_their_existing_date_contract(self) -> None:
+        profile, _report = synthesize_canonical_profile(existing_profile=None, sources=[_source(
+            "synthetic.txt", "Name: Avery Example\nCompany: Example\nPosition: Generalist\n"
+            "Dates: Summer 2020 - Autumn 2022",
+        )])
+        self.assertEqual(profile["work"][0], {"name": "Example", "position": "Generalist",
+                                             "startDate": "Summer 2020", "endDate": "Autumn 2022"})
+
 
 if __name__ == "__main__":
     unittest.main()

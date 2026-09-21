@@ -108,6 +108,35 @@ def _conventional_docx_resume() -> bytes:
     return output.getvalue()
 
 
+def _ordinary_pdf_resume(header: Sequence[tuple[str, int]], body: Sequence[str] | None = None) -> bytes:
+    from reportlab.pdfgen.canvas import Canvas
+
+    output = BytesIO()
+    canvas = Canvas(output)
+    canvas.setFont("Helvetica", 11)
+    # Drawing order deliberately need not match visual order. Some producers
+    # emit a contact footer before the large name at the top of the page.
+    for text, y in header:
+        canvas.drawString(60, y, text)
+    body = body if body is not None else (
+        "Professional Summary",
+        "Operations leader improving delivery and customer outcomes.",
+        "Builds practical systems and supports collaborative teams.",
+        "Selected Focus",
+        "Operational reporting and customer service.",
+        "Experience",
+        "Operations Manager | Example Systems",
+        "January 2020 - Present",
+        "- Led a team of 12 and reduced delivery delays by 30 percent.",
+        "Skills",
+        "Analytics, SQL",
+    )
+    for offset, text in enumerate(body):
+        canvas.drawString(60, 650 - offset * 20, text)
+    canvas.save()
+    return output.getvalue()
+
+
 class ProfileSourcesTests(unittest.TestCase):
     def _stage_sources(
         self,
@@ -337,6 +366,92 @@ class ProfileSourcesTests(unittest.TestCase):
                 ["Reduced reporting time by 40 percent."],
             )
             self.assertEqual(profile["skills"][0]["keywords"], ["Python", "SQL"])
+
+    def test_ordinary_pdf_headers_and_summary_survive_preview_and_commit(self) -> None:
+        headers = {
+            "contact_before_visual_name": (
+                ("avery@example.test | Seattle, WA", 720), ("Avery Example", 760),
+            ),
+            "footer_duplicate_before_standalone_name": (
+                ("Avery Example | Operations Lead | avery@example.test", 35),
+                ("AVERY EXAMPLE", 760), ("avery@example.test | Seattle, WA", 720),
+            ),
+            "resume_title": (
+                ("Curriculum Vitae", 780), ("Avery Example", 760),
+                ("avery@example.test", 720),
+            ),
+            "inline_contact": (("Avery Example | avery@example.test", 760),),
+            "unlabelled_phone": (
+                ("Avery Example", 760), ("Seattle, WA | +1 (555) 010-0100", 720),
+            ),
+        }
+        for case, header in headers.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                data_dir = Path(directory)
+                params = self._stage_sources(data_dir, (
+                    ("synthetic-resume.pdf", "pdf", _ordinary_pdf_resume(header)),
+                ))
+                preview = preview_profile_sources(data_dir, params)
+                self.assertEqual(preview["file_counts"]["parsed"], 1)
+                self.assertEqual(preview["file_counts"]["failed"], 0)
+                self.assertEqual(preview["source_counts"]["resume"], 1)
+                self.assertTrue(preview["can_build"])
+                receipt = commit_profile_sources(data_dir, params["scan_id"])
+                self.assertTrue(receipt["renderable"])
+                profile = latest_profile(data_dir)["profile"]
+                expected_name = "AVERY EXAMPLE" if case.startswith("footer_") else "Avery Example"
+                self.assertEqual(profile["basics"]["name"], expected_name)
+                if case == "inline_contact":
+                    self.assertEqual(profile["basics"]["email"], "avery@example.test")
+                self.assertEqual(profile["basics"]["summary"],
+                                 "Operations leader improving delivery and customer outcomes. "
+                                 "Builds practical systems and supports collaborative teams.")
+                self.assertEqual(profile["work"][0]["position"], "Operations Manager")
+                facts = profile["meta"]["source_ingest"]["facts"]
+                for field in ("name", "summary"):
+                    selected = [fact for fact in facts if fact["path"] == f"basics.{field}"]
+                    self.assertEqual(len(selected), 1)
+                    self.assertEqual(selected[0]["locator"]["kind"], "line")
+                    self.assertRegex(selected[0]["evidence_sha256"], r"^[0-9a-f]{64}$")
+                self.assertTrue(render_docx_bytes(profile).startswith(b"PK"))
+
+    def test_ambiguous_pdf_header_requires_identity_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            raw = _ordinary_pdf_resume((
+                ("Avery Example", 760), ("Jordan Sample", 740),
+                ("contact@example.test", 720),
+            ))
+            params = self._stage_sources(data_dir, (("synthetic-resume.pdf", "pdf", raw),))
+            preview = preview_profile_sources(data_dir, params)
+            self.assertEqual(preview["file_counts"]["parsed"], 1)
+            self.assertFalse(preview["can_build"])
+            self.assertIn("missing_identity", {warning["code"] for warning in preview["warnings"]})
+            self.assertIsNone(latest_profile(data_dir))
+
+    def test_pdf_footer_and_prose_never_become_work_or_dates(self) -> None:
+        raw = _ordinary_pdf_resume(
+            (("Avery Example", 760), ("avery@example.test", 720)),
+            (
+                "Summary", "Builds useful reporting tools for busy teams.", "Experience",
+                "Avery Example | Operations Lead | avery@example.test",
+                "Example Systems | Operations Manager | January 2020 - Present | Remote",
+                "- Built reliable tools – serving two teams.",
+                "Operations Manager | Example Systems",
+                "Built reporting - improved delivery.",
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            params = self._stage_sources(data_dir, (("synthetic-resume.pdf", "pdf", raw),))
+            preview = preview_profile_sources(data_dir, params)
+            self.assertEqual(preview["file_counts"]["parsed"], 1)
+            self.assertTrue(preview["can_build"])
+            self.assertIn({"code": "partial_parse", "stage": "synthesis", "severity": "warning", "count": 1},
+                          preview["warnings"])
+            receipt = commit_profile_sources(data_dir, params["scan_id"])
+            self.assertTrue(receipt["renderable"])
+            self.assertFalse(latest_profile(data_dir)["profile"].get("work"))
 
     def test_structured_parse_budget_uses_remaining_time_and_degrades_safely(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

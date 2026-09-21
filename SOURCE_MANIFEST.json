@@ -34,8 +34,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 1492,
-      "sha256": "fd70598c0e42e8da3eb3b2e07764bab457f56138ce13d43878854c20c3211b37"
+      "bytes": 2968,
+      "sha256": "aac25788cd7863cff4e08be658aed55c6455f995064af9e3ff557a1175f6de91"
     },
     {
       "path": "CONTRIBUTING.md",
@@ -54,8 +54,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 5011,
-      "sha256": "25870deeb6ae64f3af3ce93187132369a4a534503222ab5109bb8cbafeb314b4"
+      "bytes": 5673,
+      "sha256": "e13a3e38337ae4c22c4d812b63f953d7bad2e9e4c4461eb8362119fa7cf563e6"
     },
     {
       "path": "SECURITY.md",
@@ -64,8 +64,8 @@
     },
     {
       "path": "docs/ARCHITECTURE.md",
-      "bytes": 6739,
-      "sha256": "858ff588221b8b7b9728ec72751771a7507d6f4bde94036806f4c5bc40a8ede1"
+      "bytes": 8022,
+      "sha256": "d68b1b460258d3a29e6d781e06b3a0cf366407eaf5172c8b0e4147ac7cd5576f"
     },
     {
       "path": "docs/BACKUP_AND_RECOVERY.md",
@@ -84,8 +84,8 @@
     },
     {
       "path": "docs/KNOWN_LIMITATIONS.md",
-      "bytes": 2080,
-      "sha256": "893a1b99743cf7b113f72f2906c6ad977805cc9277448d3fb45a19a29fb00bca"
+      "bytes": 2973,
+      "sha256": "65f833de9014c7a8bbaca79865fda83bf4a980dc3d950322fd7eb15d2bc2f07a"
     },
     {
       "path": "docs/MEMORY_CAPTURE_CONTRACT.md",
@@ -155,7 +155,7 @@
     {
       "path": "engine/pyproject.toml",
       "bytes": 542,
-      "sha256": "db348160bdd85e056a6c98952a475f2635d31247ae7bd1e35ffee9908089b0ac"
+      "sha256": "ea89bfeef9282747fd1f5736be48bed7dc90707f8527ddc4c4d685e41c62e2bf"
     },
     {
       "path": "engine/sidecar_entry.py",
@@ -165,7 +165,7 @@
     {
       "path": "engine/src/cvgnome_engine/__init__.py",
       "bytes": 92,
-      "sha256": "cb7428abac28dbb296958df52728188909119ad8594d0f06e48f00309b46be42"
+      "sha256": "4e391538cdc220a55c492ee4f2bb29374f27d4524e714e2f97ae961a6190ebec"
     },
     {
       "path": "engine/src/cvgnome_engine/__main__.py",
@@ -174,8 +174,8 @@
     },
     {
       "path": "engine/src/cvgnome_engine/cli.py",
-      "bytes": 28942,
-      "sha256": "52a8de8d037eab60f55e8fe52c9aeae03cbb935b25f33934826840d78bd70125"
+      "bytes": 29435,
+      "sha256": "796b848f4b40f249f92cc6fa8fed042eb59681ea8e8a2f45cf85c8138784d570"
     },
     {
       "path": "engine/src/cvgnome_engine/legacy_compatibility.py",
@@ -314,13 +314,18 @@
     },
     {
       "path": "engine/src/cvgnome_engine/source_ingest/synthesis.py",
-      "bytes": 49753,
-      "sha256": "aefdb5114738749278a5567f75237ae7f2ad0c67ca937a10dc0d19185961ac29"
+      "bytes": 57787,
+      "sha256": "3681b9bbe5c2419ada5bcbc4e6a25e0bd6d37b19110634c126b3fdd30cad119d"
+    },
+    {
+      "path": "engine/src/cvgnome_engine/source_recovery.py",
+      "bytes": 12055,
+      "sha256": "50ee1aadea7691a7f348145bfd3c8567048bb25c9ea8bdd82ede8abeb70e5d7f"
     },
     {
       "path": "engine/src/cvgnome_engine/source_review.py",
-      "bytes": 31624,
-      "sha256": "439f7077b5f98e02a2c163346766bace0a817a1d2e0b5b60142e83b0f90ff16d"
+      "bytes": 34068,
+      "sha256": "282781f331cc231e5321eb83ab4c7a747524919760e9480ccaf8a5cd93cc9eaf"
     },
     {
       "path": "engine/src/cvgnome_engine/source_review_schema.py",
@@ -329,8 +334,8 @@
     },
     {
       "path": "engine/src/cvgnome_engine/storage.py",
-      "bytes": 227733,
-      "sha256": "f127821195d10bbcd3d16f364c543c6592dd7240e9e5c2eb396222003e8d16be"
+      "bytes": 228107,
+      "sha256": "4d35959cccb921c2a4f5a2d39529f2d2c22e7b3ca370470ef659a1a9fbf3a2dd"
     },
     {
       "path": "engine/src/cvgnome_engine/tailoring.py",
@@ -404,8 +409,8 @@
     },
     {
       "path": "engine/tests/test_profile_sources.py",
-      "bytes": 28514,
-      "sha256": "dacb47970a97827f2ebb7de8caf0bd9d5dc1887578ae617509880a4bbfb57249"
+      "bytes": 34661,
+      "sha256": "d260937b60d908ca34c73a7a84e870d8dc57c4431a0f2298cf6a34c309d0a292"
     },
     {
       "path": "engine/tests/test_profile_validation.py",
@@ -440,7 +445,7 @@
     {
       "path": "engine/tests/test_rpc.py",
       "bytes": 65651,
-      "sha256": "402732c94114bddf2b9642edc16cb45bf947f8969685bc5b8cb5bc5bb12b083c"
+      "sha256": "38c506a525d2efb3323ef622c1f156f1368474232415b08a379593a0a357dab1"
     },
     {
       "path": "engine/tests/test_source_parser.py",
@@ -448,14 +453,19 @@
       "sha256": "bff5468c0ecf6c01b9571544b435c8a0c4ebfbcab5b1f17b8326b5d343291e7f"
     },
     {
+      "path": "engine/tests/test_source_recovery.py",
+      "bytes": 10798,
+      "sha256": "56b1c0468c0f8b0c5fe4a9970a441d74e163de45322b85832d7fbeb57a1e4312"
+    },
+    {
       "path": "engine/tests/test_source_review.py",
-      "bytes": 23342,
-      "sha256": "829ac400982a3c0eb889a6fbae7add354ff17369b5d1f92a52bcf070cda9e30f"
+      "bytes": 27296,
+      "sha256": "3aa8f258a71da172871eee0d576bc4be7572418b7079de25807810bb902b83bc"
     },
     {
       "path": "engine/tests/test_source_synthesis.py",
-      "bytes": 10860,
-      "sha256": "b254cc8fbe834c6db06204740750ce1b6988e5748b4539ad5ee8f1d2037b9098"
+      "bytes": 15968,
+      "sha256": "266ba16e50e90bf5b73738fd3e98a90b96ac202a9c7be2986a64ae1555ea92db"
     },
     {
       "path": "engine/tests/test_storage.py",
@@ -480,7 +490,7 @@
     {
       "path": "engine/uv.lock",
       "bytes": 125662,
-      "sha256": "3bf3daf1441c642f5a064b9298f564a4083e2e909b5c8fd558b06862b2716bed"
+      "sha256": "6152457d1f8eeda6f425f2af509ec792268936cf0ce877124f4278e2ec099d17"
     },
     {
       "path": "index.html",
@@ -490,12 +500,12 @@
     {
       "path": "package-lock.json",
       "bytes": 107366,
-      "sha256": "280970244013f408da44129aa4194662cec3b5cfdebcfd27bd528aa75c873d72"
+      "sha256": "565d28acac7a790b4df3345a486162db8dd407bc3317a7714a41f653200c6e7d"
     },
     {
       "path": "package.json",
       "bytes": 2196,
-      "sha256": "a239868579fbc658cf8436051ca8a54cf09738ad61698170f10f30013dd9a145"
+      "sha256": "bf6d1225dea08f9b8c62f01329803c8c37f915be609af675e7ccc0895cc27b11"
     },
     {
       "path": "public/favicon.svg",
@@ -514,8 +524,8 @@
     },
     {
       "path": "scripts/build_engine.py",
-      "bytes": 130217,
-      "sha256": "f1984e3d6d8b762133ba107af1a501bdff59b120d50a63391045338e5b7cde00"
+      "bytes": 134289,
+      "sha256": "7111c4b209c627d3e8d2e841690df1ad9b3a1e91c81df8baeb016f327b9fd30e"
     },
     {
       "path": "scripts/check_frozen_contract.py",
@@ -649,8 +659,8 @@
     },
     {
       "path": "scripts/verify_release.py",
-      "bytes": 3415,
-      "sha256": "c2e42a0ce95b7679fe846ed966ce4a1bcd0e4de8c76e74371321f6aad4a3d7e0"
+      "bytes": 3449,
+      "sha256": "e8065faad7560ca2f9ca61b6b60439bb8da82e2d3da4185132eceb1c040698a7"
     },
     {
       "path": "src-tauri/.gitignore",
@@ -660,12 +670,12 @@
     {
       "path": "src-tauri/Cargo.lock",
       "bytes": 144241,
-      "sha256": "f02df6ee0a8fc234b027ef0e2655c637de3419b758b7b386b24d8cfb1b6feec9"
+      "sha256": "b80c89846f332f5efb038b06538f64d8db24479e1f2e5178dea421b691c20a81"
     },
     {
       "path": "src-tauri/Cargo.toml",
       "bytes": 1674,
-      "sha256": "e61605f03bee41e3a1297de12e0115d26bb2f9529b884b621b2955291e77e275"
+      "sha256": "9b24eb671c7b88e1d5e1940975fb5298e22bf9df503da739a0c20e96f9d3846e"
     },
     {
       "path": "src-tauri/binaries/.gitkeep",
@@ -769,8 +779,8 @@
     },
     {
       "path": "src-tauri/src/lib.rs",
-      "bytes": 610079,
-      "sha256": "7d7a92b1a2d52ec2bd8c9376dc1b2d3fe3d436e67fe4e33e7642af56585eca0c"
+      "bytes": 631733,
+      "sha256": "a04ee78f3af2a92879bbff9e965c01ec2038600dd2b75f5f35f8fc4074f53eec"
     },
     {
       "path": "src-tauri/src/local_provider.rs",
@@ -805,22 +815,22 @@
     {
       "path": "src-tauri/tauri.conf.json",
       "bytes": 1339,
-      "sha256": "b242579b7ad7bd499048310f0d8acd8176ce0ee71bc65b16c5e2a5be07646944"
+      "sha256": "92a941c79dad1b2a7df3805d067ba736fef168e3f45ad2d4af59cf7bb89872ad"
     },
     {
       "path": "src/App.css",
-      "bytes": 104543,
-      "sha256": "b41c160f56b0ac990fd817ef2395e6764256e275fc0fdbd2248ce93e3c3c6b0f"
+      "bytes": 105195,
+      "sha256": "77f60b250c17ec8593334878bbc016466f8bea5cbce8478c7b8d1fe0cd8c626c"
     },
     {
       "path": "src/App.test.tsx",
-      "bytes": 4726,
-      "sha256": "af1bcff10f9b8d9c00a33a263873faa29ae785f71b51903a3247d905b5575c3b"
+      "bytes": 16019,
+      "sha256": "c6137f31b1d443557e99f10c52b61e6a73bb80314c3e3b8d0c8d8e1d008a2c8b"
     },
     {
       "path": "src/App.tsx",
-      "bytes": 130891,
-      "sha256": "ce5808745892639410eafa924e3595d2acc18aaaa6f6471256397085e1172952"
+      "bytes": 143276,
+      "sha256": "7184a0e1dc6d0186d4bacd052787242461a56fcb51bb847a6c792607f0f33494"
     },
     {
       "path": "src/BasicDetailsFields.tsx",

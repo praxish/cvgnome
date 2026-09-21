@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cvgnome-engine"
-version = "0.5.0"
+version = "0.5.1"
 license = "MPL-2.0"
 description = "Local-first CVGnome domain engine"
 readme = "README.md"

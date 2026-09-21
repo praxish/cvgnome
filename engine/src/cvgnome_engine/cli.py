@@ -34,6 +34,7 @@ from .source_review import apply_source_review_decisions, list_source_review_ite
 from .memories import get_memory, list_memories, propose_memory_project, save_memory
 from .profile_changes import apply_profile_changes, preview_profile_changes
 from .profile_manual_start import start_manual_profile
+from .source_recovery import recover_profile_sources, resume_profile_source_scan
 from .profile_versions import (
     diff_profile_versions,
     get_profile_basics,
@@ -283,6 +284,15 @@ def _dispatch(data_dir: Path, method: str, params: dict[str, Any]) -> Any:
         return preview_profile_sources(data_dir, params)
     if method == "profile.sources.commit":
         return commit_profile_sources(data_dir, params.get("scan_id"))
+    if method == "profile.sources.recover":
+        _require_param_keys(params, {"scan_id", "patch"})
+        try:
+            return recover_profile_sources(data_dir, params)
+        except ValueError as exc:
+            raise RpcError("invalid_params", str(exc)) from exc
+    if method == "profile.sources.resume":
+        _require_param_keys(params, set())
+        return resume_profile_source_scan(data_dir)
     if method == "profile.sources.discard":
         return discard_profile_sources(data_dir, params.get("scan_id"))
     if method == "profile.sources.discard_all":

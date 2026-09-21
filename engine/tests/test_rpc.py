@@ -91,7 +91,7 @@ class RpcTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0)
             self.assertTrue(response["ok"])
             self.assertEqual(response["id"], "single")
-            self.assertEqual(response["result"]["engine_version"], "0.5.0")
+            self.assertEqual(response["result"]["engine_version"], "0.5.1")
 
     def test_module_cli_uses_public_cvgnome_branding(self) -> None:
         completed = subprocess.run(

@@ -7,8 +7,10 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+import re
 import sqlite3
 from typing import Any
+import unicodedata
 import uuid
 
 from .profile_versions import (
@@ -229,7 +231,56 @@ def _verify_basic_fact(check: dict[str, Any], source: Any) -> None:
             continue
         if value == check["proposed_value"] and _clean_excerpt(value) == check["evidence"][0]["excerpt"]:
             return
+    if _matches_legacy_header_name_proof(check, text):
+        return
     raise VaultError("vault_integrity_error", "A source check is not supported by its retained extraction.")
+
+
+def _matches_legacy_header_name_proof(check: dict[str, Any], text: str) -> bool:
+    """Verify an existing 0.5.0 proof, never infer a new profile fact/check.
+
+    Freeze the former first-line rule here so later extraction improvements do
+    not make saved name-conflict decisions unusable. The caller has already
+    verified the retained text checksum and parser contract. Every location,
+    proposed value and excerpt must still match what that old rule produced.
+    """
+    if check["field"] != "name":
+        return False
+
+    def clean(value: str) -> str:
+        value = re.sub(r"^#{1,6}\s+", "", value.strip())
+        value = re.sub(r"^[-*•]\s+", "", value).strip("`*_ ")
+        return re.sub(r"\s+", " ", value).strip()[:120].rstrip()
+
+    def key(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", unicodedata.normalize("NFKD", value).casefold()).strip()
+
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    header = [(number, line) for number, line in enumerate(lines[:10], start=1) if clean(line)]
+    email = re.compile(r"(?<![\w.+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})(?![\w.-])", re.I)
+    if not header or not any(email.search(line) or key(line).startswith(("phone", "email"))
+                             for _number, line in header):
+        return False
+    number, first = header[0]
+    name = clean(first)
+    old_non_names = {
+        "resume", "curriculum vitae", "summary", "professional summary", "profile", "contact",
+        "experience", "work experience", "professional experience", "employment", "education",
+        "academic background", "skills", "technical skills", "core skills",
+    }
+    words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'.-]*", name)
+    if (key(name) in old_non_names or any(character.isdigit() for character in name)
+        or any(marker in name for marker in (":", "@", "/"))
+        or not 2 <= len(words) <= 5 or not all(word[0].isupper() for word in words)):
+        return False
+    evidence = check["evidence"][0]
+    if evidence["locator"] != {"kind": "line", "start": number, "end": number}:
+        return False
+    try:
+        value = _normalize_patch({"name": name})["name"]
+    except ValueError:
+        return False
+    return value == check["proposed_value"] and _clean_excerpt(value) == evidence["excerpt"]
 
 
 STATE_CTE = """WITH states AS (SELECT i.*,

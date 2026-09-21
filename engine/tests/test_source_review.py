@@ -11,6 +11,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -18,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from cvgnome_engine.cli import _handle_request
 from cvgnome_engine.profile_sources import preview_profile_sources, commit_profile_sources, discard_profile_sources
 from cvgnome_engine.profile_versions import update_profile_basics
-from cvgnome_engine.source_review import apply_source_review_decisions, list_source_review_items
+from cvgnome_engine.source_review import _verify_basic_fact, apply_source_review_decisions, list_source_review_items
 from cvgnome_engine.storage import initialize_vault, latest_profile, save_profile, reset_profile_source_retention, VaultError
 from cvgnome_engine.workspace_reset import reset_workspace, RESET_EXPECTED_FIELDS
 import cvgnome_engine.workspace_reset as reset_module
@@ -280,6 +281,70 @@ class SourceReviewTests(unittest.TestCase):
             self.assertEqual(failure.exception.code, "vault_integrity_error")
             self.assertEqual(initialize_vault(root).profile_versions, 1)
             self.assertEqual(self.page(root)["total_items"], 0)
+
+    def test_saved_legacy_first_line_name_conflict_remains_actionable(self):
+        from cvgnome_engine.source_ingest.synthesis import synthesize_canonical_profile
+
+        text = "\nAvery Example\nJordan Sample\nada@example.test\nSummary\nBuilds useful tools."
+        _profile, report = synthesize_canonical_profile(
+            existing_profile=None,
+            sources=[{"display_name": "synthetic.txt", "text": text}],
+        )
+        self.assertFalse(any(candidate["key"] == "name" for candidate in report["basic_candidates"]))
+        legacy = {"kind": "basic_conflict", "field": "name", "previous_value": "Ada Lovelace",
+                  "proposed_value": "Avery Example", "evidence": [{"source_ordinal": 0,
+                      "locator": {"kind": "line", "start": 2, "end": 2}, "excerpt": "Avery Example"}]}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            save_profile(root, BASE, source="test")
+            params = self.stage(root, [text.encode()])
+            item = params["sources"][0]
+            old_path = root / item["managed_relative_path"]
+            new_path = old_path.with_suffix(".txt")
+            old_path.rename(new_path)
+            item.update(managed_relative_path=new_path.relative_to(root).as_posix(),
+                        display_name="synthetic.txt", format="txt")
+            # Model the check material saved by the 0.5.0 producer. Verification
+            # and user decisions below run with today's unpatched implementation.
+            with patch("cvgnome_engine.profile_sources.build_source_checks", return_value=[legacy]):
+                preview_profile_sources(root, params)
+            commit_profile_sources(root, params["scan_id"])
+            page = self.page(root)
+            self.assertEqual(len(page["items"]), 1)
+            self.assertEqual(latest_profile(root)["profile"]["basics"]["name"], "Ada Lovelace")
+            result = apply_source_review_decisions(root, self.request(page, [(page["items"][0], "use_source")]))
+            self.assertTrue(result["profile_changed"])
+            self.assertEqual(latest_profile(root)["profile"]["basics"]["name"], "Avery Example")
+
+    def test_legacy_name_proof_rejects_forged_values_locations_and_excerpts(self):
+        from cvgnome_engine.profile_sources import _parser_contract
+
+        text = "\nAvery Example\nJordan Sample\nada@example.test"
+        source = {"extracted_text": text, "extracted_text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                  "parser_contract": _parser_contract("txt"), "source_format": "txt",
+                  "display_name": "synthetic.txt", "checksum_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                  "media_type": "text/plain"}
+        check = {"kind": "basic_conflict", "field": "name", "previous_value": "Ada Lovelace",
+                 "proposed_value": "Avery Example", "evidence": [{"source_ordinal": 0,
+                     "locator": {"kind": "line", "start": 2, "end": 2}, "excerpt": "Avery Example"}]}
+        _verify_basic_fact(check, source)
+        forged = []
+        value = deepcopy(check)
+        value["proposed_value"] = value["evidence"][0]["excerpt"] = "Jordan Sample"
+        forged.append(value)
+        location = deepcopy(check)
+        location["evidence"][0]["locator"] = {"kind": "line", "start": 3, "end": 3}
+        forged.append(location)
+        span = deepcopy(check)
+        span["evidence"][0]["locator"]["end"] = 3
+        forged.append(span)
+        excerpt = deepcopy(check)
+        excerpt["evidence"][0]["excerpt"] = "Another Person"
+        forged.append(excerpt)
+        for candidate in forged:
+            with self.subTest(candidate=candidate), self.assertRaises(VaultError) as failure:
+                _verify_basic_fact(candidate, source)
+            self.assertEqual(failure.exception.code, "vault_integrity_error")
 
     def test_forged_material_with_recomputed_checksum_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

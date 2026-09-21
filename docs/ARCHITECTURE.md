@@ -29,6 +29,19 @@ explicit managed-file allowlist. It preserves provider settings/credentials and
 spend controls. Backup and migration have separate non-overwriting recovery
 contracts; see BACKUP_AND_RECOVERY.md.
 
+First-profile recovery accepts a confirmed name and nullable summary for an
+existing readable source preview. A null summary preserves extracted content.
+The normalized request and its fingerprint are persisted before the import
+commit, and changed retries are rejected. User corrections have separate
+metadata; original bytes and extraction records remain unchanged. A recovered
+profile may be incomplete, while export and tailoring retain their renderability
+checks. Source commit holds one SQLite write transaction through bounded blob
+verification/publication and receipt persistence: process exit rolls the scan
+back to preview, with the prior confirmed request available for retry. Completed
+imports reuse their stored receipt. Resume returns only the latest unexpired
+first-profile preview and its confirmed correction, if one exists; unsent form
+edits are not persisted by this mechanism.
+
 The public application identifier is `com.cvgnome.desktop`; the database name is
 `cvgnome.sqlite3`. Old identifiers may appear only in the isolated compatibility
 reader and its tests for explicit migration. They are not current product names,
@@ -77,6 +90,12 @@ a readback-verified address-space limit. POSIX CPU, descriptor, output-file, and
 core-dump limits must be applied successfully. Unsupported platforms fail closed
 for structured document parsing until a tested resource-control implementation
 exists. Input/output limits and timeouts do not substitute for memory controls.
+
+Text recognition uses deterministic, bounded rules. It can identify an
+unambiguous header name near contact details despite several common PDF text
+orders, and capture a leading explicitly labeled Summary section. Conflicting
+name candidates require confirmation. This does not add OCR or general layout
+understanding, and successful extraction does not imply complete field mapping.
 
 ## Optional providers
 
