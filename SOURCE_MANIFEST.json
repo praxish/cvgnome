@@ -14,8 +14,8 @@
     },
     {
       "path": ".github/workflows/check.yml",
-      "bytes": 1714,
-      "sha256": "c7e596a2e3bb24add30f4ee6feb1ab828e9fd39103fb286eaaa8aa67261390bd"
+      "bytes": 2014,
+      "sha256": "b6192aabb6dfd106bf55c5c9ae786b3d9067c460c4bfd3d43c759887a12e844d"
     },
     {
       "path": ".gitignore",
@@ -64,8 +64,8 @@
     },
     {
       "path": "docs/ARCHITECTURE.md",
-      "bytes": 6610,
-      "sha256": "1dcfd749cac980026beb5cb966e7c3b08865cedc4f8e2c842c3f997c011fc33e"
+      "bytes": 6739,
+      "sha256": "858ff588221b8b7b9728ec72751771a7507d6f4bde94036806f4c5bc40a8ede1"
     },
     {
       "path": "docs/BACKUP_AND_RECOVERY.md",
@@ -84,8 +84,8 @@
     },
     {
       "path": "docs/KNOWN_LIMITATIONS.md",
-      "bytes": 1930,
-      "sha256": "56875f02bfb2c7337e281ecce364ced8d48f018d108e06176814efffedc0cac6"
+      "bytes": 2080,
+      "sha256": "893a1b99743cf7b113f72f2906c6ad977805cc9277448d3fb45a19a29fb00bca"
     },
     {
       "path": "docs/MEMORY_CAPTURE_CONTRACT.md",
@@ -114,13 +114,13 @@
     },
     {
       "path": "docs/RELEASING.md",
-      "bytes": 2576,
-      "sha256": "45a7f689d435a3b44165c4f480cce12be8456136997b7695bbe267f62dc246ac"
+      "bytes": 2869,
+      "sha256": "aea77233835c946ce62ca9af6bbd0e3d918e90b59e90a6228728324df88b6754"
     },
     {
       "path": "docs/ROADMAP.md",
-      "bytes": 1349,
-      "sha256": "616678bd97ad162771d3314a5e2cd52487a897be182c465f90d9ddcd29071669"
+      "bytes": 1428,
+      "sha256": "e970543e9c6d5a6949500215dedcc92befd2f0841295ea77bc936bbd6ce70643"
     },
     {
       "path": "docs/SOURCE_REVIEW_CONTRACT.md",
@@ -294,8 +294,8 @@
     },
     {
       "path": "engine/src/cvgnome_engine/source_ingest/parser.py",
-      "bytes": 18326,
-      "sha256": "9974f482c357ddd72bcd0899b6eb5058ced1bf7ab97f7ae2047454601d2c0572"
+      "bytes": 19000,
+      "sha256": "bfde451dfea0bf3b601ec1f38f997f34c55266f46111fab573ee0fb1851a6c0e"
     },
     {
       "path": "engine/src/cvgnome_engine/source_ingest/parser_child.py",
@@ -439,8 +439,8 @@
     },
     {
       "path": "engine/tests/test_source_parser.py",
-      "bytes": 14466,
-      "sha256": "f8af18e5ff67fc7d8492655839bfe52b49fa7c4b8fabbd79b4ee606bbd71ecdb"
+      "bytes": 16296,
+      "sha256": "bff5468c0ecf6c01b9571544b435c8a0c4ebfbcab5b1f17b8326b5d343291e7f"
     },
     {
       "path": "engine/tests/test_source_review.py",
@@ -509,8 +509,8 @@
     },
     {
       "path": "scripts/build_engine.py",
-      "bytes": 128483,
-      "sha256": "b044495d957baee09a94ad471611283a8c58a97354232f33a7cb3b1f7c0c5ad3"
+      "bytes": 129839,
+      "sha256": "368191c018270e37ad19e5e1a7feaaf7ca2d05ff6c20b806595f66b05be0f081"
     },
     {
       "path": "scripts/check_frozen_contract.py",
@@ -759,8 +759,8 @@
     },
     {
       "path": "src-tauri/src/lib.rs",
-      "bytes": 607517,
-      "sha256": "73f03591f91de0d3c073e16f53916625e782a68f1719f4a2b210b540b393e75c"
+      "bytes": 610079,
+      "sha256": "7d7a92b1a2d52ec2bd8c9376dc1b2d3fe3d436e67fe4e33e7642af56585eca0c"
     },
     {
       "path": "src-tauri/src/local_provider.rs",
@@ -799,8 +799,8 @@
     },
     {
       "path": "src/App.css",
-      "bytes": 102753,
-      "sha256": "3a911efdec5877a5f23d5d77d809eb1ca4e58cf76f50c99814ebed4afbcd298f"
+      "bytes": 104543,
+      "sha256": "b41c160f56b0ac990fd817ef2395e6764256e275fc0fdbd2248ce93e3c3c6b0f"
     },
     {
       "path": "src/App.test.tsx",

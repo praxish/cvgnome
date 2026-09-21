@@ -16,10 +16,12 @@
 - Document extraction is bounded. macOS samples parser-process-group memory
   and stops a worker observed above the threshold; this is not a hard allocation
   cap. Unsupported structured-parser platforms fail closed.
-- Close protection cannot save unsubmitted drafts after a crash, forced quit,
-  power loss, or OS shutdown. Retry an uncertain write from its existing screen
-  before closing. Stored profile versions and exact retries protect committed
-  work, not every in-progress keystroke.
+- Use the window close button, **CVGnome > Quit**, or **Cmd+Q** to get unsaved-draft
+  protection. **Dock > Quit and system termination can bypass that protection**;
+  save your work first. A crash, forced quit, or power loss can also lose unsaved
+  drafts. Retry an uncertain write from its existing screen before closing.
+  Stored profile versions and exact retries protect committed work, not every
+  in-progress keystroke.
 - Optional models require user setup and review. The provider spend guard is a
   local estimate, not a guarantee about account-wide charges.
 - The UI has improved text sizes, keyboard close handling, and zoom up to 300%.

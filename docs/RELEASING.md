@@ -20,6 +20,10 @@ screenshots, predecessor repository, or private development history.
    engine. Run `scripts/verify_release.py` through the engine's uv environment
    against the engine actually inside the app bundle. Check app version,
    architecture, identifiers, resources, and signing status.
+   For the initial unsigned distribution, seal the completed bundle with
+   `codesign --force --sign - PATH/TO/CVGnome.app`, then require
+   `codesign --verify --deep --strict PATH/TO/CVGnome.app` to pass. This local
+   ad-hoc signature needs no Apple account and is not Developer ID signing.
 5. Exercise a fresh synthetic workspace: manual start, document import and
    review, edits/history, memories, empty/populated Roles, DOCX/PDF export,
    keyboard/zoom, close/discard protection, and offline backup/restore/migration.

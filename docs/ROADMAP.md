@@ -12,6 +12,7 @@ roadmap entry alone; release notes record the checks actually completed.
 After the first release, useful directions include:
 
 - Apple Developer ID signing and notarization for easier macOS installation.
+- Draft recovery/autosave and protection for Dock Quit and system termination.
 - A graphical backup/restore workflow over the tested offline archive format.
 - Broader Unicode/font coverage with verified PDF rendering.
 - Additional operating systems after native packaging and security testing.

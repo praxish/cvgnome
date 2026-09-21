@@ -10160,9 +10160,74 @@ async fn export_tailored_resume(
     save_resume_artifact_copy(&app, artifact, "Save a copy of this tailored resume")
 }
 
+#[cfg(target_os = "macos")]
+const GUARDED_QUIT_MENU_ID: &str = "cvgnome.guarded-quit";
+
+#[cfg(target_os = "macos")]
+fn guarded_macos_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+
+    let package = app.package_info();
+    let application_menu = Submenu::with_items(
+        app,
+        &package.name,
+        true,
+        &[
+            &PredefinedMenuItem::about(
+                app,
+                None,
+                Some(AboutMetadata {
+                    name: Some(package.name.clone()),
+                    version: Some(package.version.to_string()),
+                    copyright: app.config().bundle.copyright.clone(),
+                    authors: app.config().bundle.publisher.clone().map(|name| vec![name]),
+                    ..Default::default()
+                }),
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(
+                app,
+                GUARDED_QUIT_MENU_ID,
+                format!("Quit {}", package.name),
+                true,
+                Some("Command+Q"),
+            )?,
+        ],
+    )?;
+
+    // Tauri's first macOS submenu is the application menu. Replace it in full
+    // to exclude the native Quit item, whose Cocoa terminate: action bypasses
+    // RunEvent::ExitRequested. Keep the standard editing/window menus intact.
+    let menu = Menu::default(app)?;
+    menu.remove_at(0)?;
+    menu.insert(&application_menu, 0)?;
+    Ok(menu)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(guarded_macos_menu)
+        .on_menu_event(|app, event| {
+            if event.id() == GUARDED_QUIT_MENU_ID {
+                if let Some(window) = app.get_webview_window("main") {
+                    // Use the same JS close guard as the title-bar close button.
+                    // Never destroy here: unsaved drafts and active work may veto.
+                    let _ = window.close();
+                } else {
+                    app.exit(0);
+                }
+            }
+        });
+
+    builder
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -10240,9 +10305,10 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
-                // Quit (including Cmd+Q) must take the same guarded path as the
-                // window close button. Destroying the final window removes it
-                // before the next exit request, so that request can finish.
+                // Programmatic exit requests use the guarded window-close path.
+                // macOS menu Quit is routed separately above because the default
+                // native menu bypasses this event. Destroying the final window
+                // removes it before the next exit request, which can finish.
                 if let Some(window) = app.get_webview_window("main") {
                     api.prevent_exit();
                     let _ = window.close();
@@ -12201,13 +12267,14 @@ mod tests {
     fn prepare_data_dir_never_moves_a_sibling_identity_directory() {
         let root = tempfile::tempdir().unwrap();
         let data_dir = root.path().join("com.cvgnome.desktop");
-        let sibling = root.path().join("com.cvgnome.desktop");
+        let sibling = root.path().join("com.example.other-workspace");
         fs::create_dir(&sibling).unwrap();
         fs::write(sibling.join("must-remain"), b"separate-vault").unwrap();
 
         prepare_data_dir(&data_dir).unwrap();
 
         assert!(data_dir.is_dir());
+        assert!(!data_dir.join("must-remain").exists());
         assert_eq!(
             fs::read(sibling.join("must-remain")).unwrap(),
             b"separate-vault"

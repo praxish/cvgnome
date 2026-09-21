@@ -106,6 +106,42 @@ class StructuredSourceParserTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, "parser_unavailable")
             self.assertEqual(child.returncode, -signal.SIGKILL)
 
+    def test_memory_telemetry_can_disappear_just_before_confirmed_exit(self) -> None:
+        # libproc can lose the resident task before waitpid observes its exit.
+        # The child must confirm exit during the bounded grace interval.
+        child = Mock(pid=1234)
+        child.poll.return_value = None
+        child.wait.return_value = 0
+        child.communicate.return_value = (None, None)
+        with tempfile.TemporaryFile() as output:
+            _communicate_supervised(
+                child, b"request", output, timeout_seconds=2,
+                memory_bytes=512 * 1024 * 1024, output_bytes=64 * 1024,
+                sample_memory=Mock(side_effect=MemoryMonitorUnavailable),
+            )
+        child.wait.assert_called_once()
+        self.assertGreater(child.wait.call_args.kwargs["timeout"], 0)
+        self.assertLessEqual(child.wait.call_args.kwargs["timeout"], 0.025)
+        child.communicate.assert_called_once()
+
+    def test_memory_telemetry_exit_grace_preserves_the_parse_deadline(self) -> None:
+        child = Mock(pid=1234)
+        child.poll.return_value = None
+        child.wait.return_value = 0
+        child.communicate.return_value = (None, None)
+        with (
+            tempfile.TemporaryFile() as output,
+            patch("cvgnome_engine.source_ingest.parser.time.monotonic", side_effect=[100, 100.99, 100.995]),
+        ):
+            _communicate_supervised(
+                child, b"request", output, timeout_seconds=1,
+                memory_bytes=512 * 1024 * 1024, output_bytes=64 * 1024,
+                sample_memory=Mock(side_effect=MemoryMonitorUnavailable),
+            )
+        child.wait.assert_called_once()
+        self.assertAlmostEqual(child.wait.call_args.kwargs["timeout"], 0.01)
+        self.assertAlmostEqual(child.communicate.call_args.kwargs["timeout"], 0.005)
+
     @unittest.skipUnless(sys.platform == "darwin", "requires macOS libproc")
     def test_native_watchdog_counts_and_stops_launcher_worker_group(self) -> None:
         # A launcher plus worker models a frozen one-file sidecar. No large

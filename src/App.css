@@ -2141,6 +2141,66 @@ textarea::placeholder { color: #a0a09b; }
   .profile-basics-editor__actions > div { display: grid; grid-template-columns: 1fr 1fr; }
 }
 
+/* Zoom reduces the CSS viewport height. Let the entire workspace scroll before
+   its command bars can squeeze the document pane out of the viewport. */
+@media (max-height: 560px) {
+  html,
+  body,
+  #root { height: auto; min-height: 100%; min-width: 0; }
+  body { overflow: auto; }
+  .app-shell { height: auto; min-height: 100vh; grid-template-rows: auto 24px; }
+
+  .hero,
+  .hero-intro,
+  .hero-sidebar,
+  .materials-workspace,
+  .review-workspace,
+  .profile-review-workspace,
+  .roles-workspace,
+  .settings-workspace { overflow: visible; }
+
+  .materials-commandbar,
+  .profile-review-commandbar,
+  .profile-review-notice { flex-shrink: 0; }
+
+  .materials-browser,
+  .review-inbox-browser,
+  .profile-review-layout,
+  .app-shell .memory-layout { flex: none; overflow: visible; }
+
+  .materials-list,
+  .role-list,
+  .material-inspector,
+  .role-work-pane,
+  .review-inbox-list,
+  .review-inbox-inspector,
+  .profile-review-document-pane,
+  .profile-review-inspector,
+  .app-shell .memory-list-pane,
+  .app-shell .memory-document-pane { overflow: visible; }
+
+  .profile-review-rail { position: static; }
+  .profile-review-document-pane,
+  .empty-document { min-height: 0; }
+  .review-inbox-list-pane { max-height: none; }
+  .workflow-drawer { max-height: none; overflow: visible; }
+  .app-shell .memory-layout { grid-template-rows: auto; }
+
+  .modal-backdrop,
+  .profile-discard-layer { padding: 12px; }
+  .confirmation-dialog,
+  .profile-discard-dialog { max-height: calc(100vh - 24px); overflow: auto; }
+}
+
+@media (max-height: 560px) and (max-width: 760px) {
+  .app-shell { grid-template-rows: auto 48px 24px; }
+  .materials-browser,
+  .review-inbox-browser,
+  .roles-workspace { grid-template-columns: minmax(0, 1fr); }
+  .material-inspector,
+  .role-work-pane { display: block; }
+}
+
 @media (prefers-color-scheme: dark) {
   .profile-review-files-action > span,
   .profile-review-rail__heading small,

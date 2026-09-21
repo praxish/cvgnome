@@ -197,7 +197,17 @@ def _communicate_supervised(
                     resident_bytes = sample_memory(process.pid)
                 except MemoryMonitorUnavailable as exc:
                     if process.poll() is None:
-                        raise SourceParserError("parser_unavailable") from exc
+                        # macOS can remove a terminating task from libproc
+                        # before waitpid reports its exit. Allow one sampling
+                        # interval, requiring confirmed exit before accepting
+                        # the response; a still-live child must fail closed.
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise SourceParserError("parser_timeout") from exc
+                        try:
+                            process.wait(timeout=min(_RESOURCE_POLL_SECONDS, remaining))
+                        except subprocess.TimeoutExpired:
+                            raise SourceParserError("parser_unavailable") from exc
                 else:
                     if resident_bytes > memory_bytes:
                         raise SourceParserError("resource_limit")

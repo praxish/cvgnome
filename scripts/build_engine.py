@@ -64,6 +64,36 @@ def _smoke_docx_bytes() -> bytes:
         return buffer.getvalue()
 
 
+def _preview_smoke_diagnostics(result: object) -> str:
+    """Report only bounded status metadata for the synthetic source fixture."""
+    if not isinstance(result, dict):
+        return json.dumps({"result_type": type(result).__name__})
+    summary: dict[str, object] = {}
+    for key in ("can_build", "review_candidate_count", "source_review_count"):
+        value = result.get(key)
+        if value is None or isinstance(value, (bool, int)):
+            summary[key] = value
+    counts = result.get("file_counts")
+    if isinstance(counts, dict):
+        summary["file_counts"] = {
+            key: counts[key]
+            for key in ("discovered", "staged", "parsed", "duplicates", "skipped", "failed")
+            if isinstance(counts.get(key), int)
+        }
+    warnings = result.get("warnings")
+    if isinstance(warnings, list):
+        summary["warnings"] = [
+            {
+                key: value[:160] if isinstance(value, str) else value
+                for key in ("code", "message", "stage", "severity", "count")
+                if isinstance((value := warning.get(key)), (str, int, bool))
+            }
+            for warning in warnings[:12]
+            if isinstance(warning, dict)
+        ]
+    return json.dumps(summary, sort_keys=True)
+
+
 def _rustc_path() -> str:
     configured = os.environ.get("RUSTC")
     if configured:
@@ -1236,7 +1266,10 @@ def _smoke_test(binary: Path) -> None:
             or preview_result.get("can_build") is not True
             or preview_result.get("review_candidate_count") != 2
         ):
-            raise SystemExit("The frozen Python sidecar could not build a source preview")
+            raise SystemExit(
+                "The frozen Python sidecar could not build a source preview: "
+                + _preview_smoke_diagnostics(preview_result)
+            )
         if "private-smoke-resume" in json.dumps(preview_result):
             raise SystemExit("The frozen Python sidecar leaked source details in its preview")
         committed = request(

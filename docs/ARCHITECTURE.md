@@ -49,8 +49,10 @@ ID, size bounded, and deadline bounded. The host launches the packaged engine
 natively for the target architecture. Exports verify regular-file status, path
 scope, byte length, and SHA-256 before copying a selected artifact.
 
-Closing or quitting must protect unsaved drafts and block interruption of an
-in-flight or uncertain operation. Native close handling is required; a browser
+Window close, Cmd+Q, and the application-menu Quit action protect unsaved drafts
+and block interruption of an in-flight or uncertain operation. Dock Quit and OS
+termination remain a known gap in the native framework; see known limitations.
+Native close handling is required; a browser
 `beforeunload` callback alone is not the desktop contract. Forced process
 termination and operating-system shutdown cannot guarantee retention of an
 unsaved in-memory draft.

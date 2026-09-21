@@ -41,6 +41,10 @@ jobs:
         run: npm run native:lint
       - name: Build local macOS application with notice resources
         run: npm run tauri -- build --bundles app --target aarch64-apple-darwin -- --locked
+      - name: Seal and verify the unsigned distribution bundle
+        run: |
+          codesign --force --sign - src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CVGnome.app
+          codesign --verify --deep --strict src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CVGnome.app
       - name: Recheck the engine actually included in the application
         run: >-
           uv run --locked --project engine --group dev python scripts/verify_release.py
