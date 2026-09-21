@@ -46,6 +46,12 @@ SECRET_PATTERNS = (
     re.compile(r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{40,}\b"),
 )
 PRIVATE_PATH = re.compile(r"/(?:Users|home)/[A-Za-z0-9_.-]+/")
+# These deliberately fictional path owners exercise the build-metadata scrubber.
+# The exception applies only to that regression fixture and those exact owners;
+# an actual developer path in the same file still fails publication inspection.
+SYNTHETIC_PATH_OWNERS = {
+    "engine/tests/test_frozen_python_config.py": {"Example", "example", "builder"},
+}
 
 
 def selected_files(root: Path) -> list[Path]:
@@ -94,7 +100,9 @@ def inspect(root: Path) -> tuple[list[dict[str, object]], list[str]]:
                 if pattern.search(text):
                     errors.append(f"Credential-pattern candidate needs review: {relative}")
                     break
-            if PRIVATE_PATH.search(text):
+            allowed_owners = SYNTHETIC_PATH_OWNERS.get(relative, set())
+            if any(match.group(0).split("/")[2] not in allowed_owners
+                   for match in PRIVATE_PATH.finditer(text)):
                 errors.append(f"Private absolute path needs removal: {relative}")
             if relative not in LEGACY_ALLOWLIST and LEGACY_PATTERN.search(text):
                 errors.append(f"Former product name outside compatibility module: {relative}")

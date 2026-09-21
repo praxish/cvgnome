@@ -114,8 +114,8 @@
     },
     {
       "path": "docs/RELEASING.md",
-      "bytes": 2869,
-      "sha256": "aea77233835c946ce62ca9af6bbd0e3d918e90b59e90a6228728324df88b6754"
+      "bytes": 3377,
+      "sha256": "3d6b436e3837d3f001ca8c1488b208695bda76abaaf8ebbb51baf5cf1481d0a4"
     },
     {
       "path": "docs/ROADMAP.md",
@@ -358,6 +358,11 @@
       "sha256": "a37efe4530e5306da11576645bf8d7561ae00851e026d2cfc86247e7c42545c9"
     },
     {
+      "path": "engine/tests/test_frozen_python_config.py",
+      "bytes": 3797,
+      "sha256": "78cb144a26cc7b336c70006c9bd4b7ea7c93991ee1e51f8c9b1678e788202b2b"
+    },
+    {
       "path": "engine/tests/test_memories.py",
       "bytes": 20584,
       "sha256": "3970f5c3ff9c2abfce293a9e8db35a34df320d24af76e11152c7661d318f4adb"
@@ -509,8 +514,8 @@
     },
     {
       "path": "scripts/build_engine.py",
-      "bytes": 129839,
-      "sha256": "368191c018270e37ad19e5e1a7feaaf7ca2d05ff6c20b806595f66b05be0f081"
+      "bytes": 130217,
+      "sha256": "f1984e3d6d8b762133ba107af1a501bdff59b120d50a63391045338e5b7cde00"
     },
     {
       "path": "scripts/check_frozen_contract.py",
@@ -521,6 +526,11 @@
       "path": "scripts/check_native_engine_contract.py",
       "bytes": 1764,
       "sha256": "3c955720f55c6f5287cc03f6ad023ffbbde906e4af6f1de42ab86ef9a923bcc7"
+    },
+    {
+      "path": "scripts/frozen_python_config.py",
+      "bytes": 3960,
+      "sha256": "badcf8cab74f316caa8221136a5bc8c4ae03545fa2fcdbc6e2656ec37f1b56a6"
     },
     {
       "path": "scripts/license-overrides.json",
@@ -634,13 +644,13 @@
     },
     {
       "path": "scripts/source_release.py",
-      "bytes": 6772,
-      "sha256": "ddd15b6f5d558f051030bef76459b7382582acfa0e5dfecc603aea13ee13ac09"
+      "bytes": 7287,
+      "sha256": "fcfb4f0db7da56a9ac43c383a258127b8af660f67975523b7473f3da69ef6efd"
     },
     {
       "path": "scripts/verify_release.py",
-      "bytes": 3060,
-      "sha256": "9eb73e812d5e6050f6adaa159e8a3de277979fb347a1449f7ffa6740c4aed0da"
+      "bytes": 3415,
+      "sha256": "c2e42a0ce95b7679fe846ed966ce4a1bcd0e4de8c76e74371321f6aad4a3d7e0"
     },
     {
       "path": "src-tauri/.gitignore",

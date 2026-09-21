@@ -2879,6 +2879,13 @@ def main() -> int:
     dist_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
     spec_dir.mkdir(parents=True, exist_ok=True)
+    private_config_dir = BUILD_ROOT / "python-config"
+    subprocess.run(
+        [uv, "run", "--frozen", "--no-sync", "--project", str(ENGINE_ROOT),
+         "python", str(ROOT / "scripts/frozen_python_config.py"),
+         "--output-dir", str(private_config_dir)],
+        check=True,
+    )
 
     subprocess.run(
         [
@@ -2894,6 +2901,8 @@ def main() -> int:
             "--name",
             "cvgnome-engine",
             *data_arguments,
+            "--additional-hooks-dir",
+            str(private_config_dir / "hooks"),
             "--hidden-import",
             "cvgnome_engine.source_ingest.parser_child",
             "--paths",

@@ -9,13 +9,18 @@ from pathlib import Path
 
 from PyInstaller.archive.readers import CArchiveReader
 from cvgnome_engine.legacy_compatibility import LEGACY_ENGINE_PACKAGE
+from frozen_python_config import code_has_private_build_path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def verify(binary: Path) -> None:
     archive = CArchiveReader(str(binary))
-    modules = archive.open_embedded_archive("PYZ.pyz").toc
+    python_archive = archive.open_embedded_archive("PYZ.pyz")
+    modules = python_archive.toc
+    for name in modules:
+        if name.startswith("_sysconfigdata_") and code_has_private_build_path(python_archive.extract(name)):
+            raise SystemExit("Frozen Python build metadata exposes a developer home/temp path; rebuild with privacy hooks")
     required_modules = {"cvgnome_engine", "cvgnome_engine.workspace_transfer",
                         "cvgnome_engine.source_ingest.parser_memory"}
     if not required_modules <= set(modules) or any(

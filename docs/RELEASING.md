@@ -15,9 +15,20 @@ screenshots, predecessor repository, or private development history.
    `--destination /absolute/path/to/a/new-source-directory` to create an explicit,
    history-free snapshot and SHA-256 manifest. Review every manifest entry and
    image. Pattern scans are aids, not proof that no private content exists.
-4. Build with `npm run tauri -- build --bundles app --target aarch64-apple-darwin
-   -- --locked`. The build regenerates dependency notices and freezes the Python
-   engine. Run `scripts/verify_release.py` through the engine's uv environment
+4. Remap native compiler source paths before building, so panic/debug strings do
+   not embed the release machine's username or checkout directory. From the
+   release checkout, use:
+
+   ```sh
+   CARGO_ENCODED_RUSTFLAGS="$(printf '%s\037%s' "--remap-path-prefix=$HOME=/build-user" "--remap-path-prefix=$PWD=/cvgnome")" \
+     npm run tauri -- build --bundles app --target aarch64-apple-darwin -- --locked
+   ```
+
+   The build regenerates dependency notices and freezes the Python engine. Its
+   generated PyInstaller hook retains Python's build variables while replacing
+   developer home/temp prefixes in the packaged configuration; it never edits
+   the installed interpreter. Run `scripts/verify_release.py` through the
+   engine's uv environment
    against the engine actually inside the app bundle. Check app version,
    architecture, identifiers, resources, and signing status.
    For the initial unsigned distribution, seal the completed bundle with
