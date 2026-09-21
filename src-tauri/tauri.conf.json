@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CVGnome",
+  "version": "0.5.0",
+  "identifier": "com.cvgnome.desktop",
+  "build": {
+    "beforeDevCommand": "npm run engine:build && npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run engine:build && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "CVGnome",
+        "width": 1120,
+        "height": 760,
+        "minWidth": 860,
+        "minHeight": 620,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data:; style-src 'self'; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "externalBin": [
+      "binaries/cvgnome-engine"
+    ],
+    "resources": {
+      "resources/THIRD_PARTY_NOTICES.txt": "THIRD_PARTY_NOTICES.txt",
+      "resources/third-party-inventory.json": "third-party-inventory.json",
+      "../LICENSE": "LICENSE",
+      "../NOTICE": "NOTICE"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

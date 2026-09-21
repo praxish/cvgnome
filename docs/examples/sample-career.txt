@@ -1,0 +1,27 @@
+Avery Example
+Operations Coordinator
+avery@example.com
+Example City
+
+Summary
+Operations coordinator who organizes documentation and helps teams complete
+recurring work. This fictional profile exists only for testing CVGnome.
+
+Work Experience
+Operations Coordinator — Example Workshop
+January 2022 – December 2024
+Maintained a shared onboarding checklist and organized monthly planning notes.
+Coordinated weekly handoffs between the support and operations teams.
+Documented recurring requests in a searchable internal guide.
+
+Education
+Example College
+Bachelor of Arts, Communication
+2018 – 2021
+
+Skills
+Documentation, scheduling, process mapping, team coordination
+
+Project
+Onboarding Guide
+Created a fictional starter guide with role checklists and process diagrams.

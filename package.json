@@ -1,0 +1,53 @@
+{
+  "name": "cvgnome-desktop",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "engine:build": "uv run --locked --project engine --group dev python scripts/build_engine.py",
+    "engine:test": "uv run --locked --project engine --group dev python -m unittest discover -s engine/tests -v",
+    "native:check": "cargo check --locked --manifest-path src-tauri/Cargo.toml",
+    "native:test": "cargo test --locked --manifest-path src-tauri/Cargo.toml --lib",
+    "native:lint": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "check": "npm run engine:test && npm run ui:test && npm run build && npm run engine:build && npm run native:check && npm run native:test && npm run contract:test && npm run contract:frozen",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "engine:smoke": "uv run --locked --project engine --group dev python scripts/build_engine.py --smoke-test-only",
+    "ui:test": "vitest run",
+    "contract:test": "uv run --locked --project engine --group dev python scripts/check_native_engine_contract.py",
+    "contract:frozen": "uv run --locked --project engine --group dev python scripts/check_frozen_contract.py"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "jsdom": "30.1.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4",
+    "vitest": "5.0.1"
+  },
+  "engines": {
+    "node": "26.5.0",
+    "npm": ">=11 <12"
+  },
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/praxish/cvgnome.git"
+  },
+  "description": "Free local career workspace for individual job seekers"
+}

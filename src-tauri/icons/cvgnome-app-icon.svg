@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" role="img" aria-labelledby="title">
+  <title>CVGnome trail marker app icon</title>
+  <rect width="80" height="80" rx="18" fill="#F4F0E7"/>
+  <g transform="translate(8 4)">
+    <path d="M32 4C20 11 11 27 8 44c5 8 13 17 24 25 11-8 19-17 24-25C53 27 44 11 32 4Z" fill="#356A8D"/>
+    <path d="M9.5 44.8c8.7-5.7 15.3-4 21.9 5.8 6.7-9.7 13.6-16.5 23.1-21.4" fill="none" stroke="#FFFDF8" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="32" cy="27" r="7" fill="#1C1A17"/>
+    <circle cx="32" cy="27" r="4.8" fill="#D96F4C"/>
+  </g>
+</svg>

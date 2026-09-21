@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cvgnome-engine"
+version = "0.5.0"
+license = "MPL-2.0"
+description = "Local-first CVGnome domain engine"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "defusedxml>=0.7.1,<1",
+  "pypdf>=6.10,<7",
+  "python-docx>=1.2,<2",
+  "reportlab>=4.4,<5",
+]
+
+[project.scripts]
+cvgnome-engine = "cvgnome_engine.cli:main"
+
+[dependency-groups]
+dev = [
+  "pyinstaller>=6.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

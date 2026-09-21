@@ -1,0 +1,30 @@
+# Version 0.5 limitations
+
+- The first downloadable application supports Apple silicon Macs. Intel Mac,
+  Windows, and Linux binaries have not been verified.
+- The app is not signed with an Apple Developer ID and is not notarized. macOS
+  may block its first launch. Download only from this project's GitHub release,
+  compare its SHA-256 checksum, and consult
+  [Apple's instructions](https://support.apple.com/102445) for allowing a trusted
+  app through Privacy & Security. Do not disable system-wide security checks.
+- Backup, restore, and migration currently require the
+  [offline command line](BACKUP_AND_RECOVERY.md). Archives are unencrypted.
+- PDF export uses Bitstream Vera. Latin text is the tested baseline; complex
+  scripts, right-to-left layout, and broad Unicode coverage are not guaranteed.
+  Review exported documents before sending them. DOCX may be a more suitable
+  editable starting point for text the bundled PDF fonts cannot render.
+- Document extraction is bounded. macOS samples parser-process-group memory
+  and stops a worker observed above the threshold; this is not a hard allocation
+  cap. Unsupported structured-parser platforms fail closed.
+- Close protection cannot save unsubmitted drafts after a crash, forced quit,
+  power loss, or OS shutdown. Retry an uncertain write from its existing screen
+  before closing. Stored profile versions and exact retries protect committed
+  work, not every in-progress keystroke.
+- Optional models require user setup and review. The provider spend guard is a
+  local estimate, not a guarantee about account-wide charges.
+- The UI has improved text sizes, keyboard close handling, and zoom up to 300%.
+  A comprehensive assistive-technology audit and further layout polish remain
+  follow-up work.
+
+Signed distribution, a graphical recovery workflow, broader fonts/platforms,
+and continued accessibility improvements are tracked in the [roadmap](ROADMAP.md).

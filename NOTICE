@@ -1,0 +1,16 @@
+CVGnome
+https://github.com/praxish/cvgnome
+
+Copyright 2026 CVGnome contributors.
+
+The original source in this repository is made available under the
+Mozilla Public License, version 2.0. See LICENSE. Unless a file states
+otherwise, this includes the project documentation and original assets.
+
+Source corresponding to official releases is available from the matching
+release tag at https://github.com/praxish/cvgnome.
+
+Third-party dependencies retain their own licenses and copyright notices.
+Release bundles include THIRD_PARTY_NOTICES.txt and a dependency inventory.
+See docs/PROVENANCE.md for the scope of this publication and docs/BRANDING.md
+for use of the project identity.
